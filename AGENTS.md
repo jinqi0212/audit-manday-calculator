@@ -24,7 +24,7 @@
 │   │   └── globals.css     # 全局样式
 │   ├── components/ui/      # Shadcn UI 组件库
 │   ├── data/               # 业务数据
-│   │   ├── codes.ts        # 专业代码数据库（611条三级代码）
+│   │   ├── codes.ts        # 专业代码数据库（611条三级代码，含专业描述）
 │   │   └── lookup-tables.ts # 审核人天查找表（QMS/EMS/OHSMS/能源）
 │   ├── hooks/              # 自定义 Hooks
 │   ├── lib/                # 工具库
