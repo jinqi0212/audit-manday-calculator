@@ -19,10 +19,17 @@
 │   └── start.sh            # 生产环境启动脚本
 ├── src/
 │   ├── app/                # 页面路由与布局
+│   │   ├── layout.tsx      # 根布局
+│   │   ├── page.tsx        # 主页（审核人天计算工具）
+│   │   └── globals.css     # 全局样式
 │   ├── components/ui/      # Shadcn UI 组件库
+│   ├── data/               # 业务数据
+│   │   ├── codes.ts        # 专业代码数据库（611条三级代码）
+│   │   └── lookup-tables.ts # 审核人天查找表（QMS/EMS/OHSMS/能源）
 │   ├── hooks/              # 自定义 Hooks
 │   ├── lib/                # 工具库
-│   │   └── utils.ts        # 通用工具函数 (cn)
+│   │   ├── utils.ts        # 通用工具函数 (cn)
+│   │   └── manday-calculator.ts # 人天计算核心逻辑
 │   └── server.ts           # 自定义服务端入口
 ├── next.config.ts          # Next.js 配置
 ├── package.json            # 项目依赖管理
