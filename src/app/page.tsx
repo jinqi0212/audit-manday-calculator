@@ -7,892 +7,751 @@ import {
   calcES,
   calcEnergyComplexity,
   calcEnergy,
-  ADJUSTMENT_FACTORS,
+  getFactorsForSystem,
+  calcTeamCapability,
   type AdjustmentFactor,
+  type TeamMember,
 } from '@/lib/manday-calculator';
 
 type SystemType = 'Q' | 'E' | 'S' | 'En';
 type AuditType = 'init' | 'monitor' | 'recert';
 
-interface MultiSystemConfig {
-  enabled: boolean;
+interface SingleSystemState {
+  systemType: SystemType;
+  auditType: AuditType;
   empCount: number;
   riskLevel: string;
+  energyConsumption: number;
+  energyTypes: number;
+  mainEnergyUses: number;
 }
 
-interface EnergyConfig {
+interface MultiSystemItem {
   enabled: boolean;
+  systemType: SystemType;
+  auditType: AuditType;
   empCount: number;
-  consumption: number;
-  types: number;
-  mainUses: number;
+  riskLevel: string;
+  energyConsumption: number;
+  energyTypes: number;
+  mainEnergyUses: number;
 }
 
-interface AuditTeamMember {
-  id: string;
-  name: string;
-  role: 'leader' | 'auditor' | 'technical' | 'observer';
-  competencies: string[];
-  auditDays: number;
+interface FactorState {
+  enabled: boolean;
+  percent: number;
 }
+
+const SYSTEM_LABELS: Record<SystemType, string> = {
+  Q: 'QMS 质量管理体系',
+  E: 'EMS 环境管理体系',
+  S: 'OHSMS 职业健康安全管理体系',
+  En: 'EnMS 能源管理体系',
+};
+
+const SYSTEM_COLORS: Record<SystemType, string> = {
+  Q: 'bg-blue-50 border-blue-200',
+  E: 'bg-green-50 border-green-200',
+  S: 'bg-orange-50 border-orange-200',
+  En: 'bg-purple-50 border-purple-200',
+};
+
+const SYSTEM_BADGE: Record<SystemType, string> = {
+  Q: 'bg-blue-100 text-blue-800',
+  E: 'bg-green-100 text-green-800',
+  S: 'bg-orange-100 text-orange-800',
+  En: 'bg-purple-100 text-purple-800',
+};
+
+const AUDIT_TYPE_LABELS: Record<AuditType, string> = {
+  init: '初次审核',
+  monitor: '监督审核',
+  recert: '再认证审核',
+};
+
+const RISK_OPTIONS_Q = ['一级', '二级'];
+const RISK_OPTIONS_ES = ['一级', '二级', '三级'];
 
 export default function Home() {
-  // 代码查询状态
+  // ========== 代码查询状态 ==========
   const [codeInput, setCodeInput] = useState('');
   const [codeResult, setCodeResult] = useState<CodeEntry | null>(null);
   const [codeError, setCodeError] = useState('');
   const [searchSuggestions, setSearchSuggestions] = useState<CodeEntry[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
-  // 单体系计算状态
-  const [systemType, setSystemType] = useState<SystemType>('Q');
-  const [auditType, setAuditType] = useState<AuditType>('init');
-  const [empCount, setEmpCount] = useState<number>(100);
-  const [riskLevel, setRiskLevel] = useState('二级');
-
-  // 能源管理状态
-  const [energyConsumption, setEnergyConsumption] = useState(100);
-  const [energyTypes, setEnergyTypes] = useState(2);
-  const [mainEnergyUses, setMainEnergyUses] = useState(5);
-
-  // 多体系计算状态
-  const [useMultiSystem, setUseMultiSystem] = useState(false);
-  const [multiSystemConfigs, setMultiSystemConfigs] = useState<Record<string, MultiSystemConfig>>({
-    Q: { enabled: true, empCount: 100, riskLevel: '二级' },
-    E: { enabled: false, empCount: 100, riskLevel: '二级' },
-    S: { enabled: false, empCount: 100, riskLevel: '二级' },
-  });
-  const [energyConfig, setEnergyConfig] = useState<EnergyConfig>({
-    enabled: false,
+  // ========== 单体系状态 ==========
+  const [single, setSingle] = useState<SingleSystemState>({
+    systemType: 'Q',
+    auditType: 'init',
     empCount: 100,
-    consumption: 100,
-    types: 2,
-    mainUses: 5,
+    riskLevel: '二级',
+    energyConsumption: 100,
+    energyTypes: 2,
+    mainEnergyUses: 5,
   });
 
-  // 审核组能力计算状态
-  const [auditTeam, setAuditTeam] = useState<AuditTeamMember[]>([
-    { id: '1', name: '审核组长', role: 'leader', competencies: ['QMS'], auditDays: 0 },
-    { id: '2', name: '审核员', role: 'auditor', competencies: ['QMS'], auditDays: 0 },
+  // ========== 多体系状态 ==========
+  const [multiItems, setMultiItems] = useState<MultiSystemItem[]>([
+    { enabled: true, systemType: 'Q', auditType: 'init', empCount: 100, riskLevel: '二级', energyConsumption: 100, energyTypes: 2, mainEnergyUses: 5 },
+    { enabled: false, systemType: 'E', auditType: 'init', empCount: 100, riskLevel: '二级', energyConsumption: 100, energyTypes: 2, mainEnergyUses: 5 },
+    { enabled: false, systemType: 'S', auditType: 'init', empCount: 100, riskLevel: '二级', energyConsumption: 100, energyTypes: 2, mainEnergyUses: 5 },
+    { enabled: false, systemType: 'En', auditType: 'init', empCount: 100, riskLevel: '二级', energyConsumption: 100, energyTypes: 2, mainEnergyUses: 5 },
+  ]);
+
+  // ========== 调整因子状态 ==========
+  const [singleFactors, setSingleFactors] = useState<Record<string, FactorState>>({});
+  const [multiFactors, setMultiFactors] = useState<Record<string, FactorState>>({});
+
+  // ========== 审核组能力状态 ==========
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([
+    { id: '1', name: '审核组长', role: 'leader', competencies: ['QMS'], auditDays: 5 },
+    { id: '2', name: '审核员A', role: 'auditor', competencies: ['QMS'], auditDays: 3 },
   ]);
   const [requiredCompetencies, setRequiredCompetencies] = useState<string[]>(['QMS']);
+  const [newMemberName, setNewMemberName] = useState('');
 
-  // 调整因子状态
-  const [selectedFactors, setSelectedFactors] = useState<Record<string, { enabled: boolean; percent: number }>>({});
-
-  // 代码查询 - 支持代码、名称、描述搜索
+  // ========== 代码查询逻辑 ==========
   const handleCodeSearch = useCallback((input: string) => {
     setCodeInput(input);
     if (!input.trim()) {
       setSearchSuggestions([]);
       setCodeResult(null);
       setCodeError('');
+      setShowSuggestions(false);
       return;
     }
-
     const trimmed = input.trim();
-    // 精确匹配代码
     const exact = CODES_DATABASE.find(c => c.code === trimmed);
     if (exact) {
       setCodeResult(exact);
       setCodeError('');
       setSearchSuggestions([]);
+      setShowSuggestions(false);
       return;
     }
-
-    // 模糊搜索：代码、名称、描述
     const lower = trimmed.toLowerCase();
-    const suggestions = CODES_DATABASE.filter(c =>
+    const matches = CODES_DATABASE.filter(c =>
       c.code.includes(trimmed) ||
-      c.name.includes(trimmed) ||
-      c.description.toLowerCase().includes(lower)
-    ).slice(0, 15);
-    setSearchSuggestions(suggestions);
-
-    if (suggestions.length === 0) {
+      c.name.toLowerCase().includes(lower) ||
+      (c.description && c.description.toLowerCase().includes(lower))
+    ).slice(0, 30);
+    setSearchSuggestions(matches);
+    setShowSuggestions(true);
+    if (matches.length === 1) {
+      setCodeResult(matches[0]);
+      setCodeError('');
+    } else if (matches.length === 0) {
       setCodeResult(null);
       setCodeError('未找到匹配的专业代码');
+    } else {
+      setCodeResult(null);
+      setCodeError('');
     }
   }, []);
 
-  const selectCode = useCallback((entry: CodeEntry) => {
+  const selectSuggestion = useCallback((entry: CodeEntry) => {
     setCodeInput(entry.code);
     setCodeResult(entry);
     setSearchSuggestions([]);
+    setShowSuggestions(false);
     setCodeError('');
-    // 自动填充风险等级
-    if (systemType === 'Q' && entry.q_risk) {
-      const r = entry.q_risk.replace(/[^一二三]/g, '');
-      if (r) setRiskLevel(r);
-    } else if ((systemType === 'E' || systemType === 'S') && (systemType === 'E' ? entry.e_risk : entry.s_risk)) {
-      const r = (systemType === 'E' ? entry.e_risk : entry.s_risk).replace(/[^一二三]/g, '');
-      if (r) setRiskLevel(r);
-    }
-    // 更新所需能力
-    const comps: string[] = [];
-    if (entry.q_risk) comps.push('QMS');
-    if (entry.e_risk) comps.push('EMS');
-    if (entry.s_risk) comps.push('OHSMS');
-    if (comps.length > 0) setRequiredCompetencies(comps);
-  }, [systemType]);
+  }, []);
 
-  // 单体系人天计算结果
-  const mandayResult = useMemo(() => {
-    if (systemType === 'En') {
-      const complexity = calcEnergyComplexity(energyConsumption, energyTypes, mainEnergyUses);
-      const result = calcEnergy(empCount, complexity.level === '高' ? 'high' : complexity.level === '中' ? 'mid' : 'low', auditType);
-      return { ...result, complexity };
-    } else if (systemType === 'Q') {
-      return calcQMS(empCount, riskLevel, auditType);
-    } else {
-      return calcES(empCount, riskLevel, auditType);
-    }
-  }, [systemType, auditType, empCount, riskLevel, energyConsumption, energyTypes, mainEnergyUses]);
-
-  // 多体系人天计算
-  const multiSystemResult = useMemo(() => {
-    if (!useMultiSystem) return null;
-    
-    interface SystemResult {
-      total: number;
-      docReview: number;
-      onsite: number;
-      phase1?: number;
-      phase2?: number;
-    }
-    
-    const results: Record<string, SystemResult> = {};
-    let maxOnsiteDays = 0;
-    let totalDocDays = 0;
-    
-    // 计算各体系人天
-    for (const [sys, config] of Object.entries(multiSystemConfigs)) {
-      if (!config.enabled) continue;
-      const sysType = sys as SystemType;
-      if (sysType === 'Q') {
-        const r = calcQMS(config.empCount, config.riskLevel, auditType);
-        if (r) {
-          const onsite = auditType === 'init' 
-            ? ((r as { phase1: number }).phase1 || 0) + ((r as { phase2: number }).phase2 || 0)
-            : (r as { onsite: number }).onsite || 0;
-          results[sys] = {
-            total: r.total,
-            docReview: r.docReview,
-            onsite,
-            phase1: auditType === 'init' ? (r as { phase1: number }).phase1 : undefined,
-            phase2: auditType === 'init' ? (r as { phase2: number }).phase2 : undefined,
-          };
-          totalDocDays += r.docReview;
-          maxOnsiteDays = Math.max(maxOnsiteDays, onsite);
-        }
-      } else if (sysType === 'E' || sysType === 'S') {
-        const r = calcES(config.empCount, config.riskLevel, auditType);
-        if (r) {
-          const onsite = auditType === 'init' 
-            ? ((r as { phase1: number }).phase1 || 0) + ((r as { phase2: number }).phase2 || 0)
-            : (r as { onsite: number }).onsite || 0;
-          results[sys] = {
-            total: r.total,
-            docReview: r.docReview,
-            onsite,
-            phase1: auditType === 'init' ? (r as { phase1: number }).phase1 : undefined,
-            phase2: auditType === 'init' ? (r as { phase2: number }).phase2 : undefined,
-          };
-          totalDocDays += r.docReview;
-          maxOnsiteDays = Math.max(maxOnsiteDays, onsite);
-        }
+  // ========== 人天计算函数 ==========
+  const calcSingleSystem = useCallback((state: SingleSystemState) => {
+    if (state.systemType === 'Q') {
+      return calcQMS(state.empCount, state.riskLevel, state.auditType);
+    } else if (state.systemType === 'E' || state.systemType === 'S') {
+      return calcES(state.empCount, state.riskLevel, state.auditType);
+    } else if (state.systemType === 'En') {
+      const complexity = calcEnergyComplexity(state.energyConsumption, state.energyTypes, state.mainEnergyUses);
+      const result = calcEnergy(state.empCount, complexity.level, state.auditType);
+      if (result) {
+        return { total: result.total, docReview: 0, onsite: result.total, level: complexity.level, complexity: complexity.value };
       }
+      return null;
     }
-    
-    // 能源体系
-    if (energyConfig.enabled) {
-      const complexity = calcEnergyComplexity(energyConfig.consumption, energyConfig.types, energyConfig.mainUses);
-      const r = calcEnergy(energyConfig.empCount, complexity.level === '高' ? 'high' : complexity.level === '中' ? 'mid' : 'low', auditType);
-      if (r && r.total) {
-        // 能源体系没有分阶段数据，全部算作现场
-        results['En'] = {
-          total: r.total,
-          docReview: 0,
-          onsite: r.total,
-        };
-        maxOnsiteDays = Math.max(maxOnsiteDays, r.total);
-      }
-    }
-    
-    // 多体系合并：文审累加，现场取最大值后乘以合并系数
-    const systemCount = Object.keys(results).length;
-    const mergeFactor = systemCount > 1 ? 1 + (systemCount - 1) * 0.2 : 1;
-    const mergedOnsite = Math.round(maxOnsiteDays * mergeFactor * 100) / 100;
-    const totalDays = totalDocDays + mergedOnsite;
-    
-    return {
-      systems: results,
-      totalDocDays,
-      mergedOnsite,
-      totalDays,
-      systemCount,
-      mergeFactor,
-    };
-  }, [useMultiSystem, multiSystemConfigs, energyConfig, auditType]);
+    return null;
+  }, []);
 
-  // 调整因子过滤
-  const availableFactors = useMemo(() => {
-    if (useMultiSystem) {
-      return ADJUSTMENT_FACTORS.filter(f => 
-        Object.entries(multiSystemConfigs).some(([sys, cfg]) => cfg.enabled && f.systems.includes(sys as SystemType)) ||
-        (energyConfig.enabled && f.systems.includes('En'))
-      );
-    }
-    return ADJUSTMENT_FACTORS.filter(f => f.systems.includes(systemType));
-  }, [systemType, useMultiSystem, multiSystemConfigs, energyConfig]);
+  const singleResult = useMemo(() => calcSingleSystem(single), [single, calcSingleSystem]);
 
-  // 计算调整后的总人天（含各阶段详情）
-  const adjustedResult = useMemo(() => {
-    const baseTotal = useMultiSystem 
-      ? multiSystemResult?.totalDays 
-      : (mandayResult && 'total' in mandayResult ? mandayResult.total : 0);
-    
-    if (!baseTotal || baseTotal <= 0) return null;
-    
-    let totalDecrease = 0;
+  // 单体系调整因子计算
+  const singleAdjustResult = useMemo(() => {
+    if (!singleResult) return null;
+    const baseTotal = singleResult.total || 0;
+    const sysKey = single.systemType === 'En' ? 'Q' : single.systemType;
+    const factors = getFactorsForSystem(sysKey as 'Q' | 'E' | 'S');
+    let totalReduce = 0;
     let totalIncrease = 0;
+    const activeFactors: { factor: AdjustmentFactor; percent: number; direction: string }[] = [];
 
-    for (const factor of availableFactors) {
-      const state = selectedFactors[factor.id];
+    factors.forEach(f => {
+      const state = singleFactors[f.id];
       if (state?.enabled) {
-        const amount = baseTotal * (state.percent / 100);
-        if (factor.type === 'decrease') totalDecrease += amount;
-        else totalIncrease += amount;
+        const pct = Math.min(state.percent, f.maxPercent || 100);
+        if (f.direction === 'reduce') {
+          totalReduce += pct;
+        } else {
+          totalIncrease += pct;
+        }
+        activeFactors.push({ factor: f, percent: pct, direction: f.direction === 'reduce' ? '减少' : '增加' });
       }
-    }
+    });
 
-    // 减少不超过30%
-    const maxDecrease = baseTotal * 0.3;
-    totalDecrease = Math.min(totalDecrease, maxDecrease);
+    // 减少总量不超过30%
+    const effectiveReduce = Math.min(totalReduce, 30);
+    const adjustedTotal = Math.max(0, baseTotal * (1 - effectiveReduce / 100) + baseTotal * totalIncrease / 100);
 
-    const adjusted = baseTotal - totalDecrease + totalIncrease;
-    const adjustRatio = adjusted / baseTotal;
-    
-    // 计算各阶段调整后的人天
-    let baseDocReview = 0;
-    let basePhase1 = 0;
-    let basePhase2 = 0;
-    let baseOnsite = 0;
-    
-    if (useMultiSystem && multiSystemResult) {
-      baseDocReview = multiSystemResult.totalDocDays;
-      baseOnsite = multiSystemResult.mergedOnsite;
-    } else if (mandayResult && 'total' in mandayResult) {
-      baseDocReview = (mandayResult as { docReview: number }).docReview;
-      basePhase1 = (mandayResult as { phase1?: number }).phase1 || 0;
-      basePhase2 = (mandayResult as { phase2?: number }).phase2 || 0;
-      baseOnsite = (mandayResult as { onsite?: number }).onsite || basePhase1 + basePhase2;
-    }
-    
+    // 各阶段分配
+    const r = singleResult as unknown as Record<string, number>;
+    const docReview = r.docReview || 0;
+    const phase1 = r.phase1 || 0;
+    const phase2 = r.phase2 || 0;
+    const onsite = r.onsite || 0;
+    const ratio = 1 - effectiveReduce / 100 + totalIncrease / 100;
+
     return {
       baseTotal,
-      totalDecrease: Math.round(totalDecrease * 100) / 100,
-      totalIncrease: Math.round(totalIncrease * 100) / 100,
-      adjusted: Math.round(adjusted * 100) / 100,
-      // 各阶段调整后的人天
-      adjustedDocReview: Math.round(baseDocReview * adjustRatio * 100) / 100,
-      adjustedPhase1: Math.round(basePhase1 * adjustRatio * 100) / 100,
-      adjustedPhase2: Math.round(basePhase2 * adjustRatio * 100) / 100,
-      adjustedOnsite: Math.round(baseOnsite * adjustRatio * 100) / 100,
+      totalReduce: effectiveReduce,
+      totalIncrease,
+      adjustedTotal: Math.round(adjustedTotal * 10) / 10,
+      activeFactors,
+      stages: single.auditType === 'init'
+        ? [
+            { name: '文审/策划/报告', base: docReview, adjusted: Math.round(docReview * ratio * 10) / 10 },
+            { name: '一阶段现场', base: phase1, adjusted: Math.round(phase1 * ratio * 10) / 10 },
+            { name: '二阶段现场', base: phase2, adjusted: Math.round(phase2 * ratio * 10) / 10 },
+          ]
+        : [
+            { name: '文审/策划/报告', base: docReview, adjusted: Math.round(docReview * ratio * 10) / 10 },
+            { name: '现场审核', base: onsite, adjusted: Math.round(onsite * ratio * 10) / 10 },
+          ],
     };
-  }, [mandayResult, multiSystemResult, useMultiSystem, selectedFactors, availableFactors]);
+  }, [singleResult, singleFactors, single.systemType, single.auditType]);
 
-  // 审核组能力评估
-  const teamCapabilityAssessment = useMemo(() => {
-    const required = new Set(requiredCompetencies);
-    const teamCompetencies = new Set<string>();
-    let totalAuditDays = 0;
-    let hasLeader = false;
-    let hasTechnicalExpert = false;
-    
-    for (const member of auditTeam) {
-      member.competencies.forEach(c => teamCompetencies.add(c));
-      totalAuditDays += member.auditDays;
-      if (member.role === 'leader') hasLeader = true;
-      if (member.role === 'technical') hasTechnicalExpert = true;
-    }
-    
-    const missingCompetencies = [...required].filter(c => !teamCompetencies.has(c));
-    const coverageRate = required.size > 0 
-      ? Math.round(((required.size - missingCompetencies.length) / required.size) * 100) 
-      : 100;
-    
-    return {
-      hasLeader,
-      hasTechnicalExpert,
-      totalAuditDays,
-      coverageRate,
-      missingCompetencies,
-      isComplete: missingCompetencies.length === 0 && hasLeader,
+  // 多体系计算
+  const multiResults = useMemo(() => {
+    const enabled = multiItems.filter(m => m.enabled);
+    if (enabled.length === 0) return null;
+
+    const results = enabled.map(item => {
+      const result = calcSingleSystem(item);
+      return { item, result };
+    });
+
+    // 合并计算：文审累加，现场取最大值后乘以合并系数
+    let totalDocReview = 0;
+    let maxOnsite = 0;
+    let totalAll = 0;
+    const details: { system: SystemType; auditType: AuditType; total: number; docReview: number; onsite: number }[] = [];
+
+    results.forEach(({ item, result }) => {
+      if (!result) return;
+      const r = result as unknown as Record<string, number>;
+      const doc = r.docReview || 0;
+      const onsite = r.onsite || r.totalOnsite || 0;
+      const total = result.total || 0;
+      totalDocReview += doc;
+      maxOnsite = Math.max(maxOnsite, onsite);
+      totalAll += total;
+      details.push({ system: item.systemType, auditType: item.auditType, total, docReview: doc, onsite });
+    });
+
+    // 合并系数：每多一个体系+20%
+    const mergeCoeff = 1 + (enabled.length - 1) * 0.2;
+    const mergedOnsite = Math.round(maxOnsite * mergeCoeff * 10) / 10;
+    const mergedTotal = Math.round((totalDocReview + mergedOnsite) * 10) / 10;
+
+    return { details, totalDocReview, maxOnsite, mergeCoeff, mergedOnsite, mergedTotal, systemCount: enabled.length };
+  }, [multiItems, calcSingleSystem]);
+
+  // 审核组能力计算
+  const teamResult = useMemo(() => calcTeamCapability(teamMembers, requiredCompetencies), [teamMembers, requiredCompetencies]);
+
+  // ========== 渲染辅助 ==========
+  const riskBadge = (risk: string) => {
+    const colors: Record<string, string> = {
+      '一级': 'bg-red-100 text-red-800 border-red-200',
+      '二级': 'bg-amber-100 text-amber-800 border-amber-200',
+      '三级': 'bg-green-100 text-green-800 border-green-200',
     };
-  }, [auditTeam, requiredCompetencies]);
-
-  const toggleFactor = (id: string) => {
-    setSelectedFactors(prev => ({
-      ...prev,
-      [id]: {
-        enabled: !prev[id]?.enabled,
-        percent: prev[id]?.percent || 10,
-      },
-    }));
-  };
-
-  const setFactorPercent = (id: string, percent: number) => {
-    setSelectedFactors(prev => ({
-      ...prev,
-      [id]: { ...prev[id], enabled: true, percent },
-    }));
-  };
-
-  const riskColor = (risk: string) => {
-    if (risk.includes('一') || risk.includes('特')) return 'text-red-600 bg-red-50 border-red-200';
-    if (risk.includes('二')) return 'text-amber-600 bg-amber-50 border-amber-200';
-    if (risk.includes('三')) return 'text-green-600 bg-green-50 border-green-200';
-    return 'text-gray-600 bg-gray-50 border-gray-200';
-  };
-
-  const addTeamMember = () => {
-    const newId = String(auditTeam.length + 1);
-    setAuditTeam([...auditTeam, {
-      id: newId,
-      name: `审核员${newId}`,
-      role: 'auditor',
-      competencies: ['QMS'],
-      auditDays: 0,
-    }]);
-  };
-
-  const removeTeamMember = (id: string) => {
-    setAuditTeam(auditTeam.filter(m => m.id !== id));
-  };
-
-  const updateTeamMember = (id: string, updates: Partial<AuditTeamMember>) => {
-    setAuditTeam(auditTeam.map(m => m.id === id ? { ...m, ...updates } : m));
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${colors[risk] || 'bg-gray-100 text-gray-600'}`}>
+        {risk}风险
+      </span>
+    );
   };
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-slate-900 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-sm">
-              审
-            </div>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">管理体系认证审核人天计算工具</h1>
-              <p className="text-xs text-slate-400">专业代码查询 / 风险识别 / 人天计算 / 多体系 / 审核组能力</p>
-            </div>
-          </div>
+      {/* 顶部标题栏 */}
+      <header className="bg-slate-800 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 py-4">
+          <h1 className="text-xl font-bold tracking-tight">管理体系认证审核人天计算工具</h1>
+          <p className="text-slate-300 text-sm mt-1">依据 MSWM11-02 / MSWM102-2 审核人天数确定指南</p>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6 sm:px-6 space-y-6">
-        {/* 专业代码查询区 */}
+      <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+        {/* ============================================================ */}
+        {/* 模块1: 专业代码查询与风险识别 - 大尺寸 */}
+        {/* ============================================================ */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <span className="w-5 h-5 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">1</span>
-              专业代码查询与风险识别
-              <span className="text-xs text-slate-400 font-normal ml-2">支持代码、名称、描述搜索</span>
-            </h2>
+          <div className="bg-slate-700 px-5 py-3">
+            <h2 className="text-base font-semibold text-white">专业代码查询与风险识别</h2>
+            <p className="text-slate-300 text-xs mt-0.5">输入三级代码、专业名称或描述关键词进行查询</p>
           </div>
           <div className="p-5">
             <div className="relative">
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                专业代码 / 名称 / 描述
+              </label>
               <div className="flex gap-3">
-                <div className="flex-1 relative">
-                  <input
-                    type="text"
-                    value={codeInput}
-                    onChange={e => handleCodeSearch(e.target.value)}
-                    placeholder="输入代码(如01.01.01)、名称或描述关键词..."
-                    className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  />
-                  {searchSuggestions.length > 0 && (
-                    <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-80 overflow-y-auto">
-                      {searchSuggestions.map(s => (
-                        <button
-                          key={s.code}
-                          onClick={() => selectCode(s)}
-                          className="w-full text-left px-4 py-3 hover:bg-indigo-50 border-b border-slate-50 last:border-0"
-                        >
-                          <div className="flex items-center gap-3 mb-1">
-                            <span className="font-mono text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">{s.code}</span>
-                            <span className="text-sm text-slate-700 font-medium truncate">{s.name}</span>
-                          </div>
-                          {s.description && (
-                            <p className="text-xs text-slate-500 line-clamp-2 text-left">{s.description.slice(0, 100)}...</p>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleCodeSearch(codeInput)}
-                  className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                >
-                  查询
-                </button>
-              </div>
-            </div>
-
-            {codeError && (
-              <p className="mt-2 text-sm text-red-500">{codeError}</p>
-            )}
-
-            {codeResult && (
-              <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                <div className="flex items-start gap-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="font-mono text-lg font-bold text-indigo-700">{codeResult.code}</span>
-                      <span className="text-base font-medium text-slate-800">{codeResult.name}</span>
-                    </div>
-                    <div className="text-xs text-slate-500 mb-3">
-                      大类: {codeResult.major_code} {codeResult.major_name} / 中类: {codeResult.medium_code} {codeResult.medium_name}
-                    </div>
-                    {/* 专业描述 */}
-                    {codeResult.description && (
-                      <div className="mb-3 p-3 bg-white rounded border border-slate-200">
-                        <div className="text-xs font-medium text-slate-600 mb-1">专业描述:</div>
-                        <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{codeResult.description}</p>
-                      </div>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${riskColor(codeResult.q_risk)}`}>
-                        QMS: {codeResult.q_risk || '未定'}
-                        {codeResult.q_accept && codeResult.q_accept !== '是' && (
-                          <span className="text-[10px] opacity-75">({codeResult.q_accept})</span>
-                        )}
-                      </span>
-                      <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${riskColor(codeResult.e_risk)}`}>
-                        EMS: {codeResult.e_risk || '未定'}
-                      </span>
-                      <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${riskColor(codeResult.s_risk)}`}>
-                        OHSMS: {codeResult.s_risk || '未定'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* 计算模式切换 */}
-        <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <span className="w-5 h-5 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">2</span>
-              审核人天计算
-            </h2>
-          </div>
-          <div className="p-5">
-            {/* 模式切换 */}
-            <div className="flex gap-2 mb-6">
-              <button
-                onClick={() => setUseMultiSystem(false)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  !useMultiSystem ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                单体系计算
-              </button>
-              <button
-                onClick={() => setUseMultiSystem(true)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                  useMultiSystem ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                多体系合并计算
-              </button>
-            </div>
-
-            {/* 审核类型选择 */}
-            <div className="mb-6">
-              <label className="block text-xs font-medium text-slate-600 mb-1.5">审核类型</label>
-              <div className="flex gap-1 w-fit">
-                {([['init', '初次'], ['monitor', '监督'], ['recert', '再认证']] as const).map(([val, label]) => (
-                  <button
-                    key={val}
-                    onClick={() => setAuditType(val)}
-                    className={`px-4 py-2 text-xs font-medium rounded-md transition-colors ${
-                      auditType === val
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 单体系计算 */}
-            {!useMultiSystem && (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">管理体系类型</label>
-                    <div className="flex gap-1">
-                      {(['Q', 'E', 'S', 'En'] as SystemType[]).map(t => (
-                        <button
-                          key={t}
-                          onClick={() => setSystemType(t)}
-                          className={`flex-1 py-2 text-xs font-medium rounded-md transition-colors ${
-                            systemType === t
-                              ? 'bg-indigo-600 text-white shadow-sm'
-                              : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                          }`}
-                        >
-                          {t === 'Q' ? 'QMS' : t === 'E' ? 'EMS' : t === 'S' ? 'OHSMS' : '能源EnMS'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1.5">
-                      {systemType === 'En' ? '能源有效人数' : '体系有效人数'}
-                    </label>
-                    <input
-                      type="number"
-                      value={empCount}
-                      onChange={e => setEmpCount(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      min={1}
-                    />
-                  </div>
-                  {systemType !== 'En' && (
-                    <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1.5">风险级别</label>
-                      <div className="flex gap-2">
-                        {(systemType === 'Q' ? ['一级', '二级'] : ['一级', '二级', '三级', '有限复杂']).map(level => (
-                          <button
-                            key={level}
-                            onClick={() => setRiskLevel(level)}
-                            className={`px-3 py-2 text-xs font-medium rounded-md transition-colors border ${
-                              riskLevel === level
-                                ? level === '一级' ? 'bg-red-600 text-white border-red-600'
-                                  : level === '二级' ? 'bg-amber-500 text-white border-amber-500'
-                                  : level === '三级' ? 'bg-green-600 text-white border-green-600'
-                                  : 'bg-slate-600 text-white border-slate-600'
-                                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                            }`}
-                          >
-                            {level}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* 能源管理特殊输入 */}
-                {systemType === 'En' && (
-                  <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <h3 className="text-xs font-semibold text-blue-800 mb-3">能源管理体系参数</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs text-slate-600 mb-1">年度综合能耗 (TJ)</label>
-                        <input
-                          type="number"
-                          value={energyConsumption}
-                          onChange={e => setEnergyConsumption(Math.max(0, parseFloat(e.target.value) || 0))}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-                          step={0.1}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 mb-1">能源种类数量</label>
-                        <input
-                          type="number"
-                          value={energyTypes}
-                          onChange={e => setEnergyTypes(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-                          min={1}
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 mb-1">主要能源使用数量</label>
-                        <input
-                          type="number"
-                          value={mainEnergyUses}
-                          onChange={e => setMainEnergyUses(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="w-full px-3 py-2 border border-slate-300 rounded-md text-sm font-mono focus:ring-2 focus:ring-blue-500 outline-none"
-                          min={1}
-                        />
-                      </div>
-                    </div>
-                    {'complexity' in (mandayResult || {}) && (mandayResult as { complexity: { value: number; level: string } }).complexity && (
-                      <div className="mt-3 flex items-center gap-3">
-                        <span className="text-xs text-slate-600">复杂程度值:</span>
-                        <span className="font-mono text-sm font-bold text-blue-700">
-                          {(mandayResult as { complexity: { value: number; level: string } }).complexity.value}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          (mandayResult as { complexity: { value: number; level: string } }).complexity.level === '高'
-                            ? 'bg-red-100 text-red-700'
-                            : (mandayResult as { complexity: { value: number; level: string } }).complexity.level === '中'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-green-100 text-green-700'
-                        }`}>
-                          {(mandayResult as { complexity: { value: number; level: string } }).complexity.level}复杂
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 计算结果 */}
-                {mandayResult && 'total' in mandayResult && (
-                  <div className="p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-200">
-                    <h3 className="text-xs font-semibold text-indigo-800 mb-3">基础人天计算结果</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {auditType === 'init' ? (
-                        <>
-                          <ResultCard label="文审/策划/报告" value={(mandayResult as { docReview: number }).docReview} />
-                          <ResultCard label="一阶段现场" value={(mandayResult as { phase1: number }).phase1} />
-                          <ResultCard label="二阶段现场" value={(mandayResult as { phase2: number }).phase2} />
-                          <ResultCard label="总人天" value={(mandayResult as { total: number }).total} highlight />
-                        </>
-                      ) : (
-                        <>
-                          <ResultCard label="文审/策划/报告" value={(mandayResult as { docReview: number }).docReview} />
-                          <ResultCard label="现场审核" value={(mandayResult as { onsite: number }).onsite} />
-                          <ResultCard label="现场最小极限" value={(mandayResult as { minOnsite: number }).minOnsite} />
-                          <ResultCard label="总人天" value={(mandayResult as { total: number }).total} highlight />
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* 多体系计算 */}
-            {useMultiSystem && (
-              <div className="space-y-4">
-                <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <h3 className="text-xs font-semibold text-slate-700 mb-3">选择需要计算的体系</h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {(['Q', 'E', 'S'] as const).map(sys => (
-                      <div key={sys} className={`p-3 rounded-lg border ${multiSystemConfigs[sys].enabled ? 'border-indigo-300 bg-indigo-50' : 'border-slate-200 bg-white'}`}>
-                        <div className="flex items-center gap-2 mb-2">
-                          <input
-                            type="checkbox"
-                            checked={multiSystemConfigs[sys].enabled}
-                            onChange={e => setMultiSystemConfigs(prev => ({
-                              ...prev,
-                              [sys]: { ...prev[sys], enabled: e.target.checked }
-                            }))}
-                            className="w-4 h-4 text-indigo-600 rounded"
-                          />
-                          <span className="text-sm font-medium text-slate-700">
-                            {sys === 'Q' ? 'QMS 质量管理体系' : sys === 'E' ? 'EMS 环境管理体系' : 'OHSMS 职业健康安全'}
-                          </span>
-                        </div>
-                        {multiSystemConfigs[sys].enabled && (
-                          <div className="grid grid-cols-2 gap-2 mt-2">
-                            <div>
-                              <label className="block text-[10px] text-slate-500">有效人数</label>
-                              <input
-                                type="number"
-                                value={multiSystemConfigs[sys].empCount}
-                                onChange={e => setMultiSystemConfigs(prev => ({
-                                  ...prev,
-                                  [sys]: { ...prev[sys], empCount: Math.max(1, parseInt(e.target.value) || 1) }
-                                }))}
-                                className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono"
-                                min={1}
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-[10px] text-slate-500">风险级别</label>
-                              <select
-                                value={multiSystemConfigs[sys].riskLevel}
-                                onChange={e => setMultiSystemConfigs(prev => ({
-                                  ...prev,
-                                  [sys]: { ...prev[sys], riskLevel: e.target.value }
-                                }))}
-                                className="w-full px-2 py-1 border border-slate-300 rounded text-xs"
-                              >
-                                {sys === 'Q' ? (
-                                  <>
-                                    <option value="一级">一级</option>
-                                    <option value="二级">二级</option>
-                                  </>
-                                ) : (
-                                  <>
-                                    <option value="一级">一级</option>
-                                    <option value="二级">二级</option>
-                                    <option value="三级">三级</option>
-                                    <option value="有限复杂">有限复杂</option>
-                                  </>
-                                )}
-                              </select>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {/* 能源体系 */}
-                    <div className={`p-3 rounded-lg border ${energyConfig.enabled ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'}`}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <input
-                          type="checkbox"
-                          checked={energyConfig.enabled}
-                          onChange={e => setEnergyConfig(prev => ({ ...prev, enabled: e.target.checked }))}
-                          className="w-4 h-4 text-blue-600 rounded"
-                        />
-                        <span className="text-sm font-medium text-slate-700">能源 EnMS 管理体系</span>
-                      </div>
-                      {energyConfig.enabled && (
-                        <div className="grid grid-cols-3 gap-2 mt-2">
-                          <div>
-                            <label className="block text-[10px] text-slate-500">有效人数</label>
-                            <input
-                              type="number"
-                              value={energyConfig.empCount}
-                              onChange={e => setEnergyConfig(prev => ({ ...prev, empCount: Math.max(1, parseInt(e.target.value) || 1) }))}
-                              className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono"
-                              min={1}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-slate-500">能耗(TJ)</label>
-                            <input
-                              type="number"
-                              value={energyConfig.consumption}
-                              onChange={e => setEnergyConfig(prev => ({ ...prev, consumption: Math.max(0, parseFloat(e.target.value) || 0) }))}
-                              className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono"
-                              step={0.1}
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] text-slate-500">能源种类</label>
-                            <input
-                              type="number"
-                              value={energyConfig.types}
-                              onChange={e => setEnergyConfig(prev => ({ ...prev, types: Math.max(1, parseInt(e.target.value) || 1) }))}
-                              className="w-full px-2 py-1 border border-slate-300 rounded text-xs font-mono"
-                              min={1}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 多体系计算结果 */}
-                {multiSystemResult && (
-                  <div className="p-4 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-lg border border-indigo-200">
-                    <h3 className="text-xs font-semibold text-indigo-800 mb-3">多体系合并计算结果</h3>
-                    <div className="space-y-3">
-                      {/* 各体系明细 */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {Object.entries(multiSystemResult.systems).map(([sys, data]) => (
-                          <div key={sys} className="p-2 bg-white rounded border border-slate-200">
-                            <div className="text-[10px] text-slate-500">{sys === 'Q' ? 'QMS' : sys === 'E' ? 'EMS' : sys === 'S' ? 'OHSMS' : 'EnMS'}</div>
-                            <div className="text-sm font-bold font-mono text-slate-700">{data.total} 人天</div>
-                            <div className="text-[10px] text-slate-400">文审:{data.docReview} 现场:{data.onsite || ((data.phase1 || 0) + (data.phase2 || 0))}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {/* 合并结果 */}
-                      <div className="p-3 bg-white rounded-lg border border-indigo-200">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <ResultCard label="文审合计" value={multiSystemResult.totalDocDays} />
-                          <ResultCard label="现场(合并后)" value={multiSystemResult.mergedOnsite} />
-                          <ResultCard label="合并系数" value={multiSystemResult.mergeFactor} suffix="x" />
-                          <ResultCard label="总人天" value={multiSystemResult.totalDays} highlight />
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-2">
-                          * 多体系合并规则：文审累加，现场取最大值后乘以合并系数(每多一个体系+20%)
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* 调整因子区 */}
-        <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <span className="w-5 h-5 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">3</span>
-              调整因子 (可选)
-              <span className="text-xs text-slate-400 font-normal ml-2">减少总量不超过30%</span>
-            </h2>
-          </div>
-          <div className="p-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {availableFactors.map(factor => (
-                <FactorCard
-                  key={factor.id}
-                  factor={factor}
-                  enabled={selectedFactors[factor.id]?.enabled || false}
-                  percent={selectedFactors[factor.id]?.percent || 10}
-                  onToggle={() => toggleFactor(factor.id)}
-                  onPercentChange={(p) => setFactorPercent(factor.id, p)}
+                <input
+                  type="text"
+                  value={codeInput}
+                  onChange={e => handleCodeSearch(e.target.value)}
+                  onFocus={() => searchSuggestions.length > 0 && setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+                  placeholder="输入代码如 01.01.01，或名称如 小麦，或描述如 纺织..."
+                  className="flex-1 h-12 px-4 text-base border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                 />
-              ))}
+                {codeResult && (
+                  <button
+                    onClick={() => { setCodeInput(''); setCodeResult(null); setCodeError(''); }}
+                    className="px-4 h-12 text-sm text-slate-500 hover:text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50"
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+
+              {/* 下拉建议列表 - 大尺寸可见 */}
+              {showSuggestions && searchSuggestions.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-slate-300 rounded-lg shadow-xl max-h-80 overflow-y-auto">
+                  {searchSuggestions.map(c => (
+                    <button
+                      key={c.code}
+                      onClick={() => selectSuggestion(c)}
+                      className="w-full text-left px-4 py-3 hover:bg-indigo-50 border-b border-slate-100 last:border-0 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-sm font-semibold text-indigo-700 min-w-[80px]">{c.code}</span>
+                        <span className="text-sm text-slate-800 font-medium truncate">{c.name}</span>
+                      </div>
+                      {c.description && (
+                        <p className="text-xs text-slate-500 mt-1 line-clamp-1 pl-[92px]">{c.description.slice(0, 80)}...</p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {adjustedResult && (
-              <div className="mt-5 p-4 bg-slate-900 rounded-lg text-white">
-                <h3 className="text-xs font-semibold text-slate-300 mb-3">调整后的人天详情</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                  <div>
-                    <div className="text-xs text-slate-400">基础人天</div>
-                    <div className="text-xl font-bold font-mono">{adjustedResult.baseTotal}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-green-400">减少</div>
-                    <div className="text-xl font-bold font-mono text-green-400">-{adjustedResult.totalDecrease}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-red-400">增加</div>
-                    <div className="text-xl font-bold font-mono text-red-400">+{adjustedResult.totalIncrease}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-indigo-300">调整后总人天</div>
-                    <div className="text-2xl font-bold font-mono text-indigo-300">{adjustedResult.adjusted}</div>
+            {codeError && <p className="mt-2 text-sm text-red-600">{codeError}</p>}
+
+            {/* 查询结果 - 完整展示 */}
+            {codeResult && (
+              <div className="mt-4 border border-slate-200 rounded-lg overflow-hidden">
+                <div className="bg-slate-50 px-5 py-3 border-b border-slate-200">
+                  <div className="flex items-center gap-4">
+                    <span className="font-mono text-lg font-bold text-indigo-700">{codeResult.code}</span>
+                    <span className="text-lg font-semibold text-slate-800">{codeResult.name}</span>
                   </div>
                 </div>
-                {/* 各阶段调整后的人天 */}
-                <div className="pt-4 border-t border-slate-700">
-                  <div className="text-xs text-slate-400 mb-2">各阶段调整后的人天:</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="p-2 bg-slate-800 rounded">
-                      <div className="text-[10px] text-slate-400">文审/策划/报告</div>
-                      <div className="text-sm font-bold font-mono text-white">{adjustedResult.adjustedDocReview}</div>
+                <div className="p-5 space-y-4">
+                  {/* 归属信息 */}
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-slate-500">大类：</span>
+                      <span className="font-medium text-slate-800">{codeResult.major_code} {codeResult.major_name}</span>
                     </div>
-                    {auditType === 'init' ? (
-                      <>
-                        <div className="p-2 bg-slate-800 rounded">
-                          <div className="text-[10px] text-slate-400">一阶段现场</div>
-                          <div className="text-sm font-bold font-mono text-white">{adjustedResult.adjustedPhase1}</div>
+                    <div>
+                      <span className="text-slate-500">中类：</span>
+                      <span className="font-medium text-slate-800">{codeResult.medium_code} {codeResult.medium_name}</span>
+                    </div>
+                  </div>
+
+                  {/* 风险等级 */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                      <div className="text-xs text-slate-500 mb-1">QMS 质量</div>
+                      <div className="flex items-center gap-2">
+                        {codeResult.q_risk ? riskBadge(codeResult.q_risk) : <span className="text-xs text-slate-400">未评级</span>}
+                        {codeResult.q_accept && (
+                          <span className="text-xs text-slate-500 ml-1">{codeResult.q_accept}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                      <div className="text-xs text-slate-500 mb-1">EMS 环境</div>
+                      <div>{codeResult.e_risk ? riskBadge(codeResult.e_risk) : <span className="text-xs text-slate-400">未评级</span>}</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-200">
+                      <div className="text-xs text-slate-500 mb-1">OHSMS 安全</div>
+                      <div>{codeResult.s_risk ? riskBadge(codeResult.s_risk) : <span className="text-xs text-slate-400">未评级</span>}</div>
+                    </div>
+                  </div>
+
+                  {/* 专业描述 */}
+                  {codeResult.description && (
+                    <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-100">
+                      <div className="text-xs font-medium text-indigo-700 mb-2">分类内容说明</div>
+                      <p className="text-sm text-slate-700 leading-relaxed">{codeResult.description}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ============================================================ */}
+        {/* 模块2: 单体系人天计算 */}
+        {/* ============================================================ */}
+        <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-indigo-700 px-5 py-3">
+            <h2 className="text-base font-semibold text-white">单体系审核人天计算</h2>
+            <p className="text-indigo-200 text-xs mt-0.5">选择单个体系，输入有效人数和风险等级，计算审核人天</p>
+          </div>
+          <div className="p-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">管理体系</label>
+                <select
+                  value={single.systemType}
+                  onChange={e => {
+                    const st = e.target.value as SystemType;
+                    setSingle(s => ({
+                      ...s,
+                      systemType: st,
+                      riskLevel: st === 'Q' ? '二级' : st === 'En' ? '二级' : '二级',
+                    }));
+                  }}
+                  className="w-full h-11 px-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="Q">QMS 质量</option>
+                  <option value="E">EMS 环境</option>
+                  <option value="S">OHSMS 安全</option>
+                  <option value="En">EnMS 能源</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">审核类型</label>
+                <select
+                  value={single.auditType}
+                  onChange={e => setSingle(s => ({ ...s, auditType: e.target.value as AuditType }))}
+                  className="w-full h-11 px-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  <option value="init">初次审核</option>
+                  <option value="monitor">监督审核</option>
+                  <option value="recert">再认证审核</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">有效人数</label>
+                <input
+                  type="number"
+                  value={single.empCount}
+                  onChange={e => setSingle(s => ({ ...s, empCount: parseInt(e.target.value) || 0 }))}
+                  className="w-full h-11 px-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  min={1}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                  {single.systemType === 'En' ? '复杂程度' : '风险等级'}
+                </label>
+                {single.systemType === 'En' ? (
+                  <div className="h-11 px-3 flex items-center bg-purple-50 border border-purple-200 rounded-lg text-sm font-medium text-purple-800">
+                    {(() => {
+                      const c = calcEnergyComplexity(single.energyConsumption, single.energyTypes, single.mainEnergyUses);
+                      return `${c.level}（${c.value}）`;
+                    })()}
+                  </div>
+                ) : (
+                  <select
+                    value={single.riskLevel}
+                    onChange={e => setSingle(s => ({ ...s, riskLevel: e.target.value }))}
+                    className="w-full h-11 px-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    {(single.systemType === 'Q' ? RISK_OPTIONS_Q : RISK_OPTIONS_ES).map(r => (
+                      <option key={r} value={r}>{r}风险</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* 能源管理特殊输入 */}
+            {single.systemType === 'En' && (
+              <div className="grid grid-cols-3 gap-4 mb-5 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                <div>
+                  <label className="block text-xs font-medium text-purple-700 mb-1">年度综合能耗 (TJ)</label>
+                  <input
+                    type="number"
+                    value={single.energyConsumption}
+                    onChange={e => setSingle(s => ({ ...s, energyConsumption: parseFloat(e.target.value) || 0 }))}
+                    className="w-full h-10 px-3 border border-purple-200 rounded-lg text-sm bg-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-purple-700 mb-1">能源种类数量</label>
+                  <input
+                    type="number"
+                    value={single.energyTypes}
+                    onChange={e => setSingle(s => ({ ...s, energyTypes: parseInt(e.target.value) || 0 }))}
+                    className="w-full h-10 px-3 border border-purple-200 rounded-lg text-sm bg-white outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-purple-700 mb-1">主要能源使用数量</label>
+                  <input
+                    type="number"
+                    value={single.mainEnergyUses}
+                    onChange={e => setSingle(s => ({ ...s, mainEnergyUses: parseInt(e.target.value) || 0 }))}
+                    className="w-full h-10 px-3 border border-purple-200 rounded-lg text-sm bg-white outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* 单体系计算结果 */}
+            {singleResult && (
+              <div className="space-y-4">
+                {/* 基础人天 */}
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                  <div className="text-sm font-medium text-slate-700 mb-3">
+                    {SYSTEM_LABELS[single.systemType]} - {AUDIT_TYPE_LABELS[single.auditType]}
+                  </div>
+                  {single.auditType === 'init' ? (() => {
+                    const r = singleResult as unknown as Record<string, number>;
+                    return (
+                    <div className="grid grid-cols-4 gap-3 text-center">
+                      <div className="bg-white rounded p-2 border border-slate-200">
+                        <div className="text-xs text-slate-500">文审</div>
+                        <div className="text-lg font-bold text-slate-800">{singleResult.docReview}</div>
+                      </div>
+                      <div className="bg-white rounded p-2 border border-slate-200">
+                        <div className="text-xs text-slate-500">一阶段</div>
+                        <div className="text-lg font-bold text-slate-800">{r.phase1}</div>
+                      </div>
+                      <div className="bg-white rounded p-2 border border-slate-200">
+                        <div className="text-xs text-slate-500">二阶段</div>
+                        <div className="text-lg font-bold text-slate-800">{r.phase2}</div>
+                      </div>
+                      <div className="bg-indigo-50 rounded p-2 border border-indigo-200">
+                        <div className="text-xs text-indigo-600">合计</div>
+                        <div className="text-lg font-bold text-indigo-700">{singleResult.total}</div>
+                      </div>
+                    </div>
+                    );
+                  })() : (() => {
+                    const r = singleResult as unknown as Record<string, number>;
+                    return (
+                    <div className="grid grid-cols-3 gap-3 text-center">
+                      <div className="bg-white rounded p-2 border border-slate-200">
+                        <div className="text-xs text-slate-500">文审</div>
+                        <div className="text-lg font-bold text-slate-800">{singleResult.docReview}</div>
+                      </div>
+                      <div className="bg-white rounded p-2 border border-slate-200">
+                        <div className="text-xs text-slate-500">现场</div>
+                        <div className="text-lg font-bold text-slate-800">{r.onsite}</div>
+                      </div>
+                      <div className="bg-indigo-50 rounded p-2 border border-indigo-200">
+                        <div className="text-xs text-indigo-600">合计</div>
+                        <div className="text-lg font-bold text-indigo-700">{singleResult.total}</div>
+                      </div>
+                    </div>
+                    );
+                  })()}
+                </div>
+
+                {/* 调整因子 */}
+                <AdjustmentFactorsPanel
+                  system={single.systemType}
+                  factors={singleFactors}
+                  setFactors={setSingleFactors}
+                  baseTotal={singleResult.total || 0}
+                  adjustResult={singleAdjustResult}
+                />
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ============================================================ */}
+        {/* 模块3: 多体系人天合并计算 */}
+        {/* ============================================================ */}
+        <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-emerald-700 px-5 py-3">
+            <h2 className="text-base font-semibold text-white">多体系审核人天合并计算</h2>
+            <p className="text-emerald-200 text-xs mt-0.5">各体系可独立选择审核类型，合并计算：文审累加 + 现场取最大值 × 合并系数（每多一个体系+20%）</p>
+          </div>
+          <div className="p-5 space-y-4">
+            {multiItems.map((item, idx) => (
+              <div key={idx} className={`rounded-lg border-2 p-4 transition-all ${item.enabled ? SYSTEM_COLORS[item.systemType] : 'border-slate-200 bg-slate-50 opacity-60'}`}>
+                <div className="flex items-center gap-3 mb-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={item.enabled}
+                      onChange={e => {
+                        const next = [...multiItems];
+                        next[idx] = { ...next[idx], enabled: e.target.checked };
+                        setMultiItems(next);
+                      }}
+                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <span className={`text-sm font-semibold px-2 py-0.5 rounded ${SYSTEM_BADGE[item.systemType]}`}>
+                      {item.systemType}
+                    </span>
+                    <span className="text-sm text-slate-600">{SYSTEM_LABELS[item.systemType]}</span>
+                  </label>
+                </div>
+                {item.enabled && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">审核类型</label>
+                      <select
+                        value={item.auditType}
+                        onChange={e => {
+                          const next = [...multiItems];
+                          next[idx] = { ...next[idx], auditType: e.target.value as AuditType };
+                          setMultiItems(next);
+                        }}
+                        className="w-full h-10 px-2 border border-slate-300 rounded-lg text-sm bg-white outline-none"
+                      >
+                        <option value="init">初次审核</option>
+                        <option value="monitor">监督审核</option>
+                        <option value="recert">再认证审核</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">有效人数</label>
+                      <input
+                        type="number"
+                        value={item.empCount}
+                        onChange={e => {
+                          const next = [...multiItems];
+                          next[idx] = { ...next[idx], empCount: parseInt(e.target.value) || 0 };
+                          setMultiItems(next);
+                        }}
+                        className="w-full h-10 px-2 border border-slate-300 rounded-lg text-sm bg-white outline-none"
+                        min={1}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        {item.systemType === 'En' ? '复杂程度' : '风险等级'}
+                      </label>
+                      {item.systemType === 'En' ? (
+                        <div className="h-10 px-2 flex items-center bg-purple-50 border border-purple-200 rounded-lg text-xs font-medium text-purple-800">
+                          {(() => {
+                            const c = calcEnergyComplexity(item.energyConsumption, item.energyTypes, item.mainEnergyUses);
+                            return `${c.level}（${c.value}）`;
+                          })()}
                         </div>
-                        <div className="p-2 bg-slate-800 rounded">
-                          <div className="text-[10px] text-slate-400">二阶段现场</div>
-                          <div className="text-sm font-bold font-mono text-white">{adjustedResult.adjustedPhase2}</div>
+                      ) : (
+                        <select
+                          value={item.riskLevel}
+                          onChange={e => {
+                            const next = [...multiItems];
+                            next[idx] = { ...next[idx], riskLevel: e.target.value };
+                            setMultiItems(next);
+                          }}
+                          className="w-full h-10 px-2 border border-slate-300 rounded-lg text-sm bg-white outline-none"
+                        >
+                          {(item.systemType === 'Q' ? RISK_OPTIONS_Q : RISK_OPTIONS_ES).map(r => (
+                            <option key={r} value={r}>{r}风险</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    {item.systemType === 'En' && (
+                      <div className="grid grid-cols-3 gap-1">
+                        <div>
+                          <label className="block text-[10px] text-slate-500">能耗TJ</label>
+                          <input type="number" value={item.energyConsumption}
+                            onChange={e => { const n = [...multiItems]; n[idx] = { ...n[idx], energyConsumption: parseFloat(e.target.value) || 0 }; setMultiItems(n); }}
+                            className="w-full h-10 px-1 border border-slate-300 rounded text-xs bg-white outline-none" />
                         </div>
-                      </>
-                    ) : (
-                      <div className="p-2 bg-slate-800 rounded">
-                        <div className="text-[10px] text-slate-400">现场审核</div>
-                        <div className="text-sm font-bold font-mono text-white">{adjustedResult.adjustedOnsite}</div>
+                        <div>
+                          <label className="block text-[10px] text-slate-500">种类</label>
+                          <input type="number" value={item.energyTypes}
+                            onChange={e => { const n = [...multiItems]; n[idx] = { ...n[idx], energyTypes: parseInt(e.target.value) || 0 }; setMultiItems(n); }}
+                            className="w-full h-10 px-1 border border-slate-300 rounded text-xs bg-white outline-none" />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-500">主要用途</label>
+                          <input type="number" value={item.mainEnergyUses}
+                            onChange={e => { const n = [...multiItems]; n[idx] = { ...n[idx], mainEnergyUses: parseInt(e.target.value) || 0 }; setMultiItems(n); }}
+                            className="w-full h-10 px-1 border border-slate-300 rounded text-xs bg-white outline-none" />
+                        </div>
                       </div>
                     )}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* 多体系合并结果 */}
+            {multiResults && multiResults.systemCount > 0 && (
+              <div className="space-y-4 mt-4">
+                {/* 各体系明细 */}
+                <div className="bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        <th className="text-left px-4 py-2 font-medium text-slate-600">体系</th>
+                        <th className="text-left px-4 py-2 font-medium text-slate-600">审核类型</th>
+                        <th className="text-right px-4 py-2 font-medium text-slate-600">文审</th>
+                        <th className="text-right px-4 py-2 font-medium text-slate-600">现场</th>
+                        <th className="text-right px-4 py-2 font-medium text-slate-600">合计</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {multiResults.details.map((d, i) => (
+                        <tr key={i} className="border-t border-slate-200">
+                          <td className="px-4 py-2">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded ${SYSTEM_BADGE[d.system]}`}>{d.system}</span>
+                          </td>
+                          <td className="px-4 py-2 text-slate-600">{AUDIT_TYPE_LABELS[d.auditType]}</td>
+                          <td className="px-4 py-2 text-right font-mono">{d.docReview}</td>
+                          <td className="px-4 py-2 text-right font-mono">{d.onsite}</td>
+                          <td className="px-4 py-2 text-right font-mono font-semibold">{d.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 合并结果 */}
+                <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
+                  <div className="text-sm font-medium text-emerald-800 mb-3">合并计算结果</div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+                    <div className="bg-white rounded p-2 border border-emerald-200">
+                      <div className="text-xs text-slate-500">文审合计</div>
+                      <div className="text-lg font-bold text-slate-800">{multiResults.totalDocReview}</div>
+                    </div>
+                    <div className="bg-white rounded p-2 border border-emerald-200">
+                      <div className="text-xs text-slate-500">现场最大×{multiResults.mergeCoeff.toFixed(1)}</div>
+                      <div className="text-lg font-bold text-slate-800">{multiResults.mergedOnsite}</div>
+                    </div>
+                    <div className="bg-white rounded p-2 border border-emerald-200">
+                      <div className="text-xs text-slate-500">体系数</div>
+                      <div className="text-lg font-bold text-slate-800">{multiResults.systemCount}</div>
+                    </div>
+                    <div className="bg-emerald-100 rounded p-2 border border-emerald-300">
+                      <div className="text-xs text-emerald-700">合并总人天</div>
+                      <div className="text-xl font-bold text-emerald-800">{multiResults.mergedTotal}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-emerald-700">
+                    合并规则：文审累加（{multiResults.totalDocReview}）+ 现场最大值 × 合并系数（{multiResults.mergeCoeff.toFixed(1)}）= {multiResults.totalDocReview} + {multiResults.mergedOnsite} = {multiResults.mergedTotal}
                   </div>
                 </div>
               </div>
@@ -900,246 +759,388 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 审核组能力计算 */}
+        {/* ============================================================ */}
+        {/* 模块4: 审核组能力计算 */}
+        {/* ============================================================ */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-            <h2 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-              <span className="w-5 h-5 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">4</span>
-              审核组能力计算
-            </h2>
+          <div className="bg-violet-700 px-5 py-3">
+            <h2 className="text-base font-semibold text-white">审核组能力计算</h2>
+            <p className="text-violet-200 text-xs mt-0.5">根据审核组成员能力和审核天数计算审核组能力程度</p>
           </div>
-          <div className="p-5">
+          <div className="p-5 space-y-5">
+            {/* 公式说明 */}
+            <div className="bg-violet-50 rounded-lg p-4 border border-violet-200">
+              <div className="text-sm font-medium text-violet-800 mb-2">审核组能力计算公式</div>
+              <div className="text-xs text-slate-700 space-y-1.5 font-mono">
+                <p>2名审核人员：能力 = 最高能力分 / (最高能力分 + 次高能力分) × 100%</p>
+                <p>3名审核人员：能力 = (最高×2 + 次高×1) / (最高 + 次高 + 第三) × 1/2 × 100%</p>
+                <p>4名审核人员：能力 = (最高×3 + 次高×2 + 第三×1) / (最高 + 次高 + 第三 + 第四) × 1/3 × 100%</p>
+                <p className="text-violet-700 font-semibold pt-1">通用公式：能力 = Σ[(n-1-i) × 能力ᵢ] / Σ能力ᵢ × 1/(n-1) × 100%</p>
+                <p className="text-slate-500">其中 n = 审核人员数量，i = 按能力降序排列的序号（从0开始）</p>
+              </div>
+              <div className="mt-3 text-xs text-slate-600 border-t border-violet-200 pt-2">
+                <span className="font-medium">审核时间最多减少量规则：</span>
+                <span className="ml-2">能力100% → 最多减少20% | 能力80%-99% → 最多减少15% | 能力60%-79% → 最多减少10% | 能力40%-59% → 最多减少5% | 能力&lt;40% → 不减少</span>
+              </div>
+            </div>
+
             {/* 所需能力 */}
-            <div className="mb-4">
-              <label className="block text-xs font-medium text-slate-600 mb-2">所需审核能力</label>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">所需审核能力</label>
               <div className="flex flex-wrap gap-2">
-                {['QMS', 'EMS', 'OHSMS', 'EnMS', 'ISMS', 'FSMS'].map(comp => (
-                  <button
-                    key={comp}
-                    onClick={() => setRequiredCompetencies(prev => 
-                      prev.includes(comp) ? prev.filter(c => c !== comp) : [...prev, comp]
-                    )}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      requiredCompetencies.includes(comp)
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {comp}
-                  </button>
+                {['QMS', 'EMS', 'OHSMS', 'EnMS', 'ISMS', 'FSMS'].map(c => (
+                  <label key={c} className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={requiredCompetencies.includes(c)}
+                      onChange={e => {
+                        if (e.target.checked) {
+                          setRequiredCompetencies([...requiredCompetencies, c]);
+                        } else {
+                          setRequiredCompetencies(requiredCompetencies.filter(x => x !== c));
+                        }
+                      }}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
+                    />
+                    {c}
+                  </label>
                 ))}
               </div>
             </div>
 
             {/* 审核组成员列表 */}
-            <div className="mb-4">
+            <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-medium text-slate-600">审核组成员</label>
-                <button
-                  onClick={addTeamMember}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium"
-                >
-                  + 添加成员
-                </button>
+                <label className="text-sm font-medium text-slate-700">审核组成员</label>
               </div>
               <div className="space-y-2">
-                {auditTeam.map(member => (
-                  <div key={member.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                    <div className="grid grid-cols-12 gap-2 items-center">
-                      <input
-                        type="text"
-                        value={member.name}
-                        onChange={e => updateTeamMember(member.id, { name: e.target.value })}
-                        className="col-span-3 px-2 py-1 border border-slate-300 rounded text-xs"
-                        placeholder="姓名"
-                      />
-                      <select
-                        value={member.role}
-                        onChange={e => updateTeamMember(member.id, { role: e.target.value as AuditTeamMember['role'] })}
-                        className="col-span-2 px-2 py-1 border border-slate-300 rounded text-xs"
-                      >
-                        <option value="leader">组长</option>
-                        <option value="auditor">审核员</option>
-                        <option value="technical">技术专家</option>
-                        <option value="observer">观察员</option>
-                      </select>
-                      <div className="col-span-4 flex flex-wrap gap-1">
-                        {['QMS', 'EMS', 'OHSMS', 'EnMS'].map(comp => (
-                          <button
-                            key={comp}
-                            onClick={() => {
-                              const comps = member.competencies.includes(comp)
-                                ? member.competencies.filter(c => c !== comp)
-                                : [...member.competencies, comp];
-                              updateTeamMember(member.id, { competencies: comps });
+                {teamMembers.map((member, idx) => (
+                  <div key={member.id} className="flex items-center gap-2 p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <span className="text-xs text-slate-400 w-6">{idx + 1}.</span>
+                    <input
+                      type="text"
+                      value={member.name}
+                      onChange={e => {
+                        const next = [...teamMembers];
+                        next[idx] = { ...next[idx], name: e.target.value };
+                        setTeamMembers(next);
+                      }}
+                      className="w-24 h-9 px-2 border border-slate-300 rounded text-sm bg-white outline-none"
+                      placeholder="姓名"
+                    />
+                    <select
+                      value={member.role}
+                      onChange={e => {
+                        const next = [...teamMembers];
+                        next[idx] = { ...next[idx], role: e.target.value as TeamMember['role'] };
+                        setTeamMembers(next);
+                      }}
+                      className="h-9 px-2 border border-slate-300 rounded text-sm bg-white outline-none"
+                    >
+                      <option value="leader">组长</option>
+                      <option value="auditor">审核员</option>
+                      <option value="technical">技术专家</option>
+                      <option value="observer">观察员</option>
+                    </select>
+                    <div className="flex items-center gap-1">
+                      {['QMS', 'EMS', 'OHSMS', 'EnMS'].map(c => (
+                        <label key={c} className="flex items-center gap-0.5 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={member.competencies.includes(c)}
+                            onChange={e => {
+                              const next = [...teamMembers];
+                              if (e.target.checked) {
+                                next[idx] = { ...next[idx], competencies: [...next[idx].competencies, c] };
+                              } else {
+                                next[idx] = { ...next[idx], competencies: next[idx].competencies.filter(x => x !== c) };
+                              }
+                              setTeamMembers(next);
                             }}
-                            className={`px-1.5 py-0.5 text-[10px] rounded ${
-                              member.competencies.includes(comp)
-                                ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                                : 'bg-white text-slate-400 border border-slate-200'
-                            }`}
-                          >
-                            {comp}
-                          </button>
-                        ))}
-                      </div>
+                            className="w-3 h-3 rounded border-slate-300"
+                          />
+                          <span className="text-slate-600">{c.replace('MS', '')}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-500">人天:</span>
                       <input
                         type="number"
                         value={member.auditDays}
-                        onChange={e => updateTeamMember(member.id, { auditDays: Math.max(0, parseFloat(e.target.value) || 0) })}
-                        className="col-span-2 px-2 py-1 border border-slate-300 rounded text-xs font-mono"
-                        placeholder="人天"
+                        onChange={e => {
+                          const next = [...teamMembers];
+                          next[idx] = { ...next[idx], auditDays: parseFloat(e.target.value) || 0 };
+                          setTeamMembers(next);
+                        }}
+                        className="w-16 h-9 px-2 border border-slate-300 rounded text-sm bg-white outline-none"
                         min={0}
                         step={0.5}
                       />
-                      <button
-                        onClick={() => removeTeamMember(member.id)}
-                        className="col-span-1 text-red-500 hover:text-red-700 text-xs"
-                      >
-                        删除
-                      </button>
                     </div>
+                    <button
+                      onClick={() => setTeamMembers(teamMembers.filter(m => m.id !== member.id))}
+                      className="ml-auto text-red-500 hover:text-red-700 text-sm px-2"
+                    >
+                      删除
+                    </button>
                   </div>
                 ))}
               </div>
+              <button
+                onClick={() => {
+                  const id = Date.now().toString();
+                  setTeamMembers([...teamMembers, { id, name: newMemberName || `审核员${teamMembers.length + 1}`, role: 'auditor', competencies: ['QMS'], auditDays: 0 }]);
+                  setNewMemberName('');
+                }}
+                className="mt-2 px-4 py-2 text-sm text-violet-700 border border-violet-300 rounded-lg hover:bg-violet-50"
+              >
+                + 添加成员
+              </button>
             </div>
 
-            {/* 能力评估结果 */}
-            <div className={`p-4 rounded-lg border ${teamCapabilityAssessment.isComplete ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
-              <h3 className={`text-xs font-semibold mb-3 ${teamCapabilityAssessment.isComplete ? 'text-green-800' : 'text-amber-800'}`}>
-                审核组能力评估
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div>
-                  <div className="text-xs text-slate-600">审核组长</div>
-                  <div className={`text-sm font-bold ${teamCapabilityAssessment.hasLeader ? 'text-green-600' : 'text-red-600'}`}>
-                    {teamCapabilityAssessment.hasLeader ? '已配置' : '缺失'}
+            {/* 计算结果 */}
+            <div className="bg-violet-50 rounded-lg p-4 border border-violet-200">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-xs text-slate-500">审核组能力程度</div>
+                  <div className="text-2xl font-bold text-violet-800">{teamResult.capabilityPercent}%</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-500">审核组长</div>
+                  <div className={`text-lg font-bold ${teamResult.hasLeader ? 'text-green-700' : 'text-red-600'}`}>
+                    {teamResult.hasLeader ? '已配置' : '未配置'}
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs text-slate-600">能力覆盖率</div>
-                  <div className={`text-sm font-bold ${teamCapabilityAssessment.coverageRate === 100 ? 'text-green-600' : 'text-amber-600'}`}>
-                    {teamCapabilityAssessment.coverageRate}%
+                <div className="text-center">
+                  <div className="text-xs text-slate-500">能力覆盖</div>
+                  <div className="text-lg font-bold text-slate-800">
+                    {teamResult.coveredCompetencies.length}/{requiredCompetencies.length}
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs text-slate-600">计划审核人天</div>
-                  <div className="text-sm font-bold font-mono text-slate-700">
-                    {teamCapabilityAssessment.totalAuditDays}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-600">缺失能力</div>
-                  <div className="text-sm font-bold text-red-600">
-                    {teamCapabilityAssessment.missingCompetencies.length > 0 
-                      ? teamCapabilityAssessment.missingCompetencies.join(', ')
-                      : '无'}
-                  </div>
+                <div className="text-center">
+                  <div className="text-xs text-slate-500">最多可减少</div>
+                  <div className="text-lg font-bold text-emerald-700">{teamResult.maxReductionPercent}%</div>
                 </div>
               </div>
-              {teamCapabilityAssessment.isComplete && (
-                <div className="mt-3 text-xs text-green-700">
-                  审核组配置完整，满足审核要求。
-                </div>
-              )}
-              {!teamCapabilityAssessment.isComplete && (
-                <div className="mt-3 text-xs text-amber-700">
-                  {teamCapabilityAssessment.missingCompetencies.length > 0 && (
-                    <span>需要补充具备 {teamCapabilityAssessment.missingCompetencies.join('、')} 能力的审核员。</span>
-                  )}
-                  {!teamCapabilityAssessment.hasLeader && (
-                    <span> 需要指定一名审核组长。</span>
-                  )}
+              <div className="mt-3 text-xs text-slate-600 font-mono bg-white rounded p-2 border border-violet-100">
+                计算过程：{teamResult.formula}
+              </div>
+              {teamResult.missingCompetencies.length > 0 && (
+                <div className="mt-2 text-xs text-red-600">
+                  缺失能力：{teamResult.missingCompetencies.join(', ')}
                 </div>
               )}
             </div>
           </div>
         </section>
       </main>
-
-      <footer className="max-w-7xl mx-auto px-4 py-4 sm:px-6 text-center">
-        <p className="text-xs text-slate-400">
-          数据来源: MSWM11-02审核人天数确定指南(2026.2.28修订) / MSWM102-2能源管理体系审核人天数确定指南(2026.3.27修订) / 《管理体系认证业务范围分类内容说明》第三部分
-        </p>
-      </footer>
     </div>
   );
 }
 
-function ResultCard({ label, value, highlight, suffix }: { label: string; value: number; highlight?: boolean; suffix?: string }) {
-  return (
-    <div className={`p-3 rounded-lg ${highlight ? 'bg-indigo-600 text-white' : 'bg-white/80 text-slate-800'}`}>
-      <div className={`text-[10px] ${highlight ? 'text-indigo-200' : 'text-slate-500'}`}>{label}</div>
-      <div className={`text-lg font-bold font-mono ${highlight ? '' : 'text-indigo-700'}`}>
-        {value}{suffix && <span className="text-xs ml-0.5">{suffix}</span>}
-      </div>
-    </div>
-  );
-}
-
-function FactorCard({
-  factor,
-  enabled,
-  percent,
-  onToggle,
-  onPercentChange,
+// ============================================================
+// 调整因子面板组件
+// ============================================================
+function AdjustmentFactorsPanel({
+  system,
+  factors,
+  setFactors,
+  baseTotal,
+  adjustResult,
 }: {
-  factor: AdjustmentFactor;
-  enabled: boolean;
-  percent: number;
-  onToggle: () => void;
-  onPercentChange: (p: number) => void;
+  system: SystemType;
+  factors: Record<string, FactorState>;
+  setFactors: React.Dispatch<React.SetStateAction<Record<string, FactorState>>>;
+  baseTotal: number;
+  adjustResult: ReturnType<typeof calcSingleAdjustResult> | null;
 }) {
+  const systemKey = system === 'En' ? 'Q' : system;
+  const availableFactors = getFactorsForSystem(systemKey as 'Q' | 'E' | 'S');
+  const reduceFactors = availableFactors.filter(f => f.direction === 'reduce');
+  const increaseFactors = availableFactors.filter(f => f.direction === 'increase');
+
+  const toggleFactor = (id: string) => {
+    setFactors(prev => ({
+      ...prev,
+      [id]: { enabled: !prev[id]?.enabled, percent: prev[id]?.percent || 0 },
+    }));
+  };
+
+  const setPercent = (id: string, percent: number) => {
+    setFactors(prev => ({
+      ...prev,
+      [id]: { ...prev[id], enabled: true, percent },
+    }));
+  };
+
   return (
-    <div className={`p-3 rounded-lg border transition-colors ${
-      enabled
-        ? factor.type === 'decrease'
-          ? 'border-green-300 bg-green-50'
-          : 'border-red-300 bg-red-50'
-        : 'border-slate-200 bg-white'
-    }`}>
-      <div className="flex items-start gap-2">
-        <button
-          onClick={onToggle}
-          className={`mt-0.5 w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-            enabled
-              ? factor.type === 'decrease'
-                ? 'bg-green-500 border-green-500'
-                : 'bg-red-500 border-red-500'
-              : 'border-slate-300'
-          }`}
-        >
-          {enabled && (
-            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </button>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-800">{factor.label}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-              factor.type === 'decrease' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-            }`}>
-              {factor.type === 'decrease' ? '减少' : '增加'}
-            </span>
-          </div>
-          <p className="text-[10px] text-slate-500 mt-0.5">{factor.description}</p>
-          {enabled && factor.maxPercent > 0 && (
-            <div className="mt-2 flex items-center gap-2">
+    <div className="space-y-4">
+      {/* 减少因子 */}
+      <div className="border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-amber-50 px-4 py-2 border-b border-amber-200">
+          <span className="text-sm font-medium text-amber-800">减少审核时间的因素</span>
+          <span className="text-xs text-amber-600 ml-2">（减少总量不超过30%）</span>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {reduceFactors.map(f => (
+            <div key={f.id} className={`px-4 py-3 flex items-start gap-3 ${factors[f.id]?.enabled ? 'bg-amber-50/50' : ''}`}>
               <input
-                type="range"
-                min={1}
-                max={factor.maxPercent}
-                value={percent}
-                onChange={e => onPercentChange(parseInt(e.target.value))}
-                className="flex-1 h-1 accent-indigo-600"
+                type="checkbox"
+                checked={factors[f.id]?.enabled || false}
+                onChange={() => toggleFactor(f.id)}
+                className="mt-1 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
               />
-              <span className="text-xs font-mono text-slate-600 w-10 text-right">{percent}%</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-slate-800">{f.description}</div>
+                <div className="text-xs text-amber-700 mt-0.5 font-medium">{f.rule}</div>
+              </div>
+              {factors[f.id]?.enabled && f.maxPercent > 0 && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="range"
+                    min={0}
+                    max={f.maxPercent}
+                    value={factors[f.id]?.percent || 0}
+                    onChange={e => setPercent(f.id, parseInt(e.target.value))}
+                    className="w-20 h-1.5 accent-amber-600"
+                  />
+                  <span className="text-sm font-mono text-amber-800 w-10 text-right">-{factors[f.id]?.percent || 0}%</span>
+                </div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       </div>
+
+      {/* 增加因子 */}
+      <div className="border border-slate-200 rounded-lg overflow-hidden">
+        <div className="bg-red-50 px-4 py-2 border-b border-red-200">
+          <span className="text-sm font-medium text-red-800">增加审核时间的因素</span>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {increaseFactors.map(f => (
+            <div key={f.id} className={`px-4 py-3 flex items-start gap-3 ${factors[f.id]?.enabled ? 'bg-red-50/50' : ''}`}>
+              <input
+                type="checkbox"
+                checked={factors[f.id]?.enabled || false}
+                onChange={() => toggleFactor(f.id)}
+                className="mt-1 w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm text-slate-800">{f.description}</div>
+                <div className="text-xs text-red-700 mt-0.5 font-medium">{f.rule}</div>
+              </div>
+              {factors[f.id]?.enabled && f.maxPercent > 0 && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="range"
+                    min={0}
+                    max={f.maxPercent}
+                    value={factors[f.id]?.percent || 0}
+                    onChange={e => setPercent(f.id, parseInt(e.target.value))}
+                    className="w-20 h-1.5 accent-red-600"
+                  />
+                  <span className="text-sm font-mono text-red-800 w-10 text-right">+{factors[f.id]?.percent || 0}%</span>
+                </div>
+              )}
+              {factors[f.id]?.enabled && f.id === 'rb_compliance' && (
+                <span className="text-xs text-red-700 font-medium shrink-0">+1人日</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 调整后结果 */}
+      {adjustResult && (
+        <div className="bg-indigo-50 rounded-lg p-4 border border-indigo-200">
+          <div className="text-sm font-medium text-indigo-800 mb-3">调整后的人天</div>
+          <div className="grid grid-cols-3 gap-3 text-center mb-3">
+            <div className="bg-white rounded p-2 border border-indigo-200">
+              <div className="text-xs text-slate-500">基础人天</div>
+              <div className="text-lg font-bold text-slate-800">{adjustResult.baseTotal}</div>
+            </div>
+            <div className="bg-white rounded p-2 border border-amber-200">
+              <div className="text-xs text-slate-500">减少 -{adjustResult.totalReduce}%</div>
+              <div className="text-lg font-bold text-amber-700">{adjustResult.totalReduce > 0 ? '-' : ''}{adjustResult.totalReduce}%</div>
+            </div>
+            <div className="bg-white rounded p-2 border border-red-200">
+              <div className="text-xs text-slate-500">增加 +{adjustResult.totalIncrease}%</div>
+              <div className="text-lg font-bold text-red-700">{adjustResult.totalIncrease > 0 ? '+' : ''}{adjustResult.totalIncrease}%</div>
+            </div>
+          </div>
+          <div className="bg-indigo-100 rounded p-3 border border-indigo-300 text-center">
+            <div className="text-xs text-indigo-600">调整后总人天</div>
+            <div className="text-2xl font-bold text-indigo-800">{adjustResult.adjustedTotal}</div>
+          </div>
+
+          {/* 各阶段详情 */}
+          <div className="mt-3 text-xs text-indigo-700">
+            <div className="font-medium mb-1">各阶段调整后人天：</div>
+            <div className="grid grid-cols-2 gap-1">
+              {adjustResult.stages.map((s, i) => (
+                <div key={i} className="flex justify-between bg-white rounded px-2 py-1 border border-indigo-100">
+                  <span>{s.name}</span>
+                  <span className="font-mono">{s.base} → {s.adjusted}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+// 类型辅助
+function calcSingleAdjustResult(
+  singleResult: { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number } | null,
+  singleFactors: Record<string, FactorState>,
+  system: SystemType,
+  auditType: AuditType
+) {
+  if (!singleResult) return null;
+  const baseTotal = singleResult.total || 0;
+  const systemKey = system === 'En' ? 'Q' : system;
+  const factors = getFactorsForSystem(systemKey as 'Q' | 'E' | 'S');
+  let totalReduce = 0;
+  let totalIncrease = 0;
+  const activeFactors: { factor: AdjustmentFactor; percent: number; direction: string }[] = [];
+
+  factors.forEach(f => {
+    const state = singleFactors[f.id];
+    if (state?.enabled) {
+      const pct = Math.min(state.percent, f.maxPercent || 100);
+      if (f.direction === 'reduce') totalReduce += pct;
+      else totalIncrease += pct;
+      activeFactors.push({ factor: f, percent: pct, direction: f.direction === 'reduce' ? '减少' : '增加' });
+    }
+  });
+
+  const effectiveReduce = Math.min(totalReduce, 30);
+  const adjustedTotal = Math.max(0, baseTotal * (1 - effectiveReduce / 100) + baseTotal * totalIncrease / 100);
+
+  const docReview = singleResult.docReview || 0;
+  const phase1 = singleResult.phase1 || 0;
+  const phase2 = singleResult.phase2 || 0;
+  const onsite = singleResult.onsite || 0;
+
+  return {
+    baseTotal,
+    totalReduce: effectiveReduce,
+    totalIncrease,
+    adjustedTotal: Math.round(adjustedTotal * 10) / 10,
+    activeFactors,
+    stages: auditType === 'init'
+      ? [
+          { name: '文审/策划/报告', base: docReview, adjusted: Math.round(docReview * (1 - effectiveReduce / 100 + totalIncrease / 100) * 10) / 10 },
+          { name: '一阶段现场', base: phase1, adjusted: Math.round(phase1 * (1 - effectiveReduce / 100 + totalIncrease / 100) * 10) / 10 },
+          { name: '二阶段现场', base: phase2, adjusted: Math.round(phase2 * (1 - effectiveReduce / 100 + totalIncrease / 100) * 10) / 10 },
+        ]
+      : [
+          { name: '文审/策划/报告', base: docReview, adjusted: Math.round(docReview * (1 - effectiveReduce / 100 + totalIncrease / 100) * 10) / 10 },
+          { name: '现场审核', base: onsite, adjusted: Math.round(onsite * (1 - effectiveReduce / 100 + totalIncrease / 100) * 10) / 10 },
+        ],
+  };
 }
