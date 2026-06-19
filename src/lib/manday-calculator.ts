@@ -90,7 +90,13 @@ export function calcEnergyComplexity(
   energyConsumption: number,
   energyTypes: number,
   mainEnergyUses: number
-): { value: number; level: string } {
+): { 
+  value: number; 
+  level: string;
+  consumptionCoeff: number;
+  typeCoeff: number;
+  useCoeff: number;
+} {
   let consumptionCoeff = 1.0;
   if (energyConsumption > 2000) consumptionCoeff = 1.6;
   else if (energyConsumption > 200) consumptionCoeff = 1.4;
@@ -111,11 +117,22 @@ export function calcEnergyComplexity(
   if (value >= 1.35) level = '高';
   else if (value >= 1.15) level = '中';
 
-  return { value: Math.round(value * 100) / 100, level };
+  return { 
+    value: Math.round(value * 100) / 100, 
+    level,
+    consumptionCoeff,
+    typeCoeff,
+    useCoeff
+  };
 }
 
 // 能源管理体系人天计算
-export function calcEnergy(empCount: number, complexityLevel: string, auditType: 'init' | 'monitor' | 'recert') {
+export function calcEnergy(
+  empCount: number, 
+  complexityLevel: string, 
+  auditType: 'init' | 'monitor' | 'recert',
+  hasRB: boolean = false
+) {
   if (auditType === 'init') {
     // 手动查找能源表4
     let row: typeof ENERGY_TABLE4[number] | null = null;
@@ -128,7 +145,9 @@ export function calcEnergy(empCount: number, complexityLevel: string, auditType:
     if (!row) row = ENERGY_TABLE4[0];
     if (!row) return null;
     const total = complexityLevel === '高' ? row.high : complexityLevel === '中' ? row.mid : row.low;
-    return { total, level: complexityLevel };
+    // RB要求下，人天减少10%
+    const adjustedTotal = hasRB ? Math.round(total * 0.9 * 10) / 10 : total;
+    return { total: adjustedTotal, level: complexityLevel, hasRB };
   } else {
     // 手动查找能源表5
     let row: typeof ENERGY_TABLE5[number] | null = null;
@@ -143,7 +162,9 @@ export function calcEnergy(empCount: number, complexityLevel: string, auditType:
     const suffix = complexityLevel === '高' ? 'high' : complexityLevel === '中' ? 'mid' : 'low';
     const key = (auditType === 'monitor' ? `mon_${suffix}` : `recert_${suffix}`) as keyof typeof row;
     const total = (row[key] as number) || 0;
-    return { total, level: complexityLevel };
+    // RB要求下，人天减少10%
+    const adjustedTotal = hasRB ? Math.round(total * 0.9 * 10) / 10 : total;
+    return { total: adjustedTotal, level: complexityLevel, hasRB };
   }
 }
 

@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import CodeSearch from '@/components/CodeSearch';
-import { calcQMS, calcES, calcEnergy, ADJUSTMENT_FACTORS } from '@/lib/manday-calculator';
+import { calcQMS, calcES, calcEnergy, calcEnergyComplexity, ADJUSTMENT_FACTORS } from '@/lib/manday-calculator';
 import type { CodeEntry } from '@/data/codes';
 
 type SystemType = 'Q' | 'E' | 'S' | 'En';
@@ -25,14 +25,15 @@ interface SystemConfig {
   annualConsumption: number;
   energyTypes: number;
   mainUses: number;
+  includeRB: boolean;
   adjustments: Record<string, { enabled: boolean; value: number }>;
 }
 
 const DEFAULT_SYSTEMS: SystemConfig[] = [
-  { enabled: true, system: 'Q', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, adjustments: {} },
-  { enabled: false, system: 'E', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, adjustments: {} },
-  { enabled: false, system: 'S', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, adjustments: {} },
-  { enabled: false, system: 'En', auditType: 'initial', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyTypes: 3, mainUses: 2, adjustments: {} },
+  { enabled: true, system: 'Q', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'E', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'S', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'En', auditType: 'initial', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
 ];
 
 const SYSTEM_NAMES: Record<string, string> = {
@@ -62,12 +63,18 @@ export default function MultiSystemPage() {
     return enabledSystems.map(config => {
       const internalAuditType = toInternalAuditType(config.auditType);
       let result;
+      let energyComplexity = null;
+      
       if (config.system === 'Q') {
         result = calcQMS(config.effectiveCount, config.riskLevel, internalAuditType);
       } else if (config.system === 'E' || config.system === 'S') {
         result = calcES(config.effectiveCount, config.riskLevel, internalAuditType);
       } else if (config.system === 'En') {
-        result = calcEnergy(config.effectiveCount, config.riskLevel, internalAuditType);
+        // 先计算能源复杂程度
+        if (config.annualConsumption > 0) {
+          energyComplexity = calcEnergyComplexity(config.annualConsumption, config.energyTypes, config.mainUses);
+          result = calcEnergy(config.effectiveCount, energyComplexity.level, internalAuditType, config.includeRB);
+        }
       }
 
       if (!result) return null;
@@ -99,6 +106,7 @@ export default function MultiSystemPage() {
       return {
         config,
         base: result,
+        energyComplexity,
         adjusted: {
           total: Math.round(adjustedTotal * 10) / 10,
           docReview: Math.round(baseData.docReview * ratio * 10) / 10,
@@ -217,32 +225,58 @@ export default function MultiSystemPage() {
                   </div>
                   
                   {config.enabled && (
-                    <div className="grid grid-cols-3 gap-1.5">
-                      <div>
-                        <label className="text-[9px] text-slate-500 block mb-0.5">审核类型</label>
-                        <select value={config.auditType} onChange={e => updateSystem(index, { auditType: e.target.value as AuditType })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
-                          <option value="initial">初次</option>
-                          <option value="surveillance">监督</option>
-                          <option value="recertification">再认证</option>
-                        </select>
+                    <>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <div>
+                          <label className="text-[9px] text-slate-500 block mb-0.5">审核类型</label>
+                          <select value={config.auditType} onChange={e => updateSystem(index, { auditType: e.target.value as AuditType })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
+                            <option value="initial">初次</option>
+                            <option value="surveillance">监督</option>
+                            <option value="recertification">再认证</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-slate-500 block mb-0.5">风险</label>
+                          <select value={config.riskLevel} onChange={e => updateSystem(index, { riskLevel: e.target.value })} className={`w-full px-1.5 py-1 border rounded text-[10px] font-medium ${
+                            config.riskLevel === '一级' ? 'border-red-300 bg-red-50 text-red-700' :
+                            config.riskLevel === '二级' ? 'border-orange-300 bg-orange-50 text-orange-700' :
+                            'border-green-300 bg-green-50 text-green-700'
+                          }`}>
+                            <option value="一级">一级</option>
+                            <option value="二级">二级</option>
+                            <option value="三级">三级</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="text-[9px] text-slate-500 block mb-0.5">人数</label>
+                          <input type="number" value={config.effectiveCount} onChange={e => updateSystem(index, { effectiveCount: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-[9px] text-slate-500 block mb-0.5">风险</label>
-                        <select value={config.riskLevel} onChange={e => updateSystem(index, { riskLevel: e.target.value })} className={`w-full px-1.5 py-1 border rounded text-[10px] font-medium ${
-                          config.riskLevel === '一级' ? 'border-red-300 bg-red-50 text-red-700' :
-                          config.riskLevel === '二级' ? 'border-orange-300 bg-orange-50 text-orange-700' :
-                          'border-green-300 bg-green-50 text-green-700'
-                        }`}>
-                          <option value="一级">一级</option>
-                          <option value="二级">二级</option>
-                          <option value="三级">三级</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="text-[9px] text-slate-500 block mb-0.5">人数</label>
-                        <input type="number" value={config.effectiveCount} onChange={e => updateSystem(index, { effectiveCount: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
-                      </div>
-                    </div>
+                      
+                      {/* 能源体系特有输入 */}
+                      {config.system === 'En' && (
+                        <div className="mt-2 pt-2 border-t border-slate-200 space-y-1.5">
+                          <div className="grid grid-cols-3 gap-1.5">
+                            <div>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">综合能耗(TJ)</label>
+                              <input type="number" value={config.annualConsumption} onChange={e => updateSystem(index, { annualConsumption: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
+                            </div>
+                            <div>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">能源种类</label>
+                              <input type="number" value={config.energyTypes} onChange={e => updateSystem(index, { energyTypes: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
+                            </div>
+                            <div>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">主要用途</label>
+                              <input type="number" value={config.mainUses} onChange={e => updateSystem(index, { mainUses: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <input type="checkbox" id={`rb-${index}`} checked={config.includeRB} onChange={e => updateSystem(index, { includeRB: e.target.checked })} className="w-3 h-3 rounded" />
+                            <label htmlFor={`rb-${index}`} className="text-[9px] text-slate-600">含RB要求（人天-10%）</label>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -321,6 +355,18 @@ export default function MultiSystemPage() {
                         </span>
                         <span className="text-[10px] font-semibold text-slate-700">{r.adjusted.total} 天</span>
                       </div>
+                      {/* 能源复杂系数详情 */}
+                      {r.config.system === 'En' && r.energyComplexity && (
+                        <div className="text-[8px] text-amber-700 bg-amber-50 rounded px-1.5 py-1 mb-1 space-y-0.5">
+                          <div className="font-semibold">复杂程度: C={r.energyComplexity.value.toFixed(2)} ({r.energyComplexity.level})</div>
+                          <div className="text-[7px] text-slate-600">
+                            能耗×{r.energyComplexity.consumptionCoeff} + 种类×{r.energyComplexity.typeCoeff} + 用途×{r.energyComplexity.useCoeff}
+                          </div>
+                          {r.config.includeRB && (
+                            <div className="text-[7px] text-indigo-600">含RB要求（已-10%）</div>
+                          )}
+                        </div>
+                      )}
                       <div className="text-[9px] text-slate-600 space-y-0.5">
                         <div className="flex justify-between">
                           <span>文审:</span>

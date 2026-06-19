@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import CodeSearch from '@/components/CodeSearch';
-import { calcQMS, calcES, calcEnergy, ADJUSTMENT_FACTORS } from '@/lib/manday-calculator';
+import { calcQMS, calcES, calcEnergy, calcEnergyComplexity, ADJUSTMENT_FACTORS } from '@/lib/manday-calculator';
 import type { CodeEntry } from '@/data/codes';
 
 type SystemType = 'Q' | 'E' | 'S' | 'En';
@@ -30,7 +30,14 @@ export default function SingleSystemPage() {
   const [annualConsumption, setAnnualConsumption] = useState(10);
   const [energyTypes, setEnergyTypes] = useState(3);
   const [mainUses, setMainUses] = useState(2);
+  const [includeRB, setIncludeRB] = useState(false); // 是否含RB要求
   const [adjustments, setAdjustments] = useState<Record<string, AdjustmentState>>({});
+
+  // 计算能源复杂程度
+  const energyComplexity = useMemo(() => {
+    if (system !== 'En' || !annualConsumption) return null;
+    return calcEnergyComplexity(annualConsumption, energyTypes, mainUses);
+  }, [system, annualConsumption, energyTypes, mainUses]);
 
   // 计算基础人天
   const baseResult = useMemo(() => {
@@ -39,11 +46,11 @@ export default function SingleSystemPage() {
       return calcQMS(effectiveCount, riskLevel, internalAuditType);
     } else if (system === 'E' || system === 'S') {
       return calcES(effectiveCount, riskLevel, internalAuditType);
-    } else if (system === 'En') {
-      return calcEnergy(effectiveCount, riskLevel, internalAuditType);
+    } else if (system === 'En' && energyComplexity) {
+      return calcEnergy(effectiveCount, energyComplexity.level, internalAuditType, includeRB);
     }
     return null;
-  }, [system, effectiveCount, riskLevel, auditType]);
+  }, [system, effectiveCount, riskLevel, auditType, energyComplexity, includeRB]);
 
   // 获取适用的调整因子
   const applicableFactors = useMemo(() => {
@@ -214,34 +221,76 @@ export default function SingleSystemPage() {
             </div>
 
             {system === 'En' && (
-              <div className="mt-2 pt-2 border-t border-slate-200 grid grid-cols-3 gap-2">
-                <div>
-                  <label className="text-[10px] text-slate-500 mb-0.5 block">年能耗(TJ)</label>
-                  <input 
-                    type="number" 
-                    value={annualConsumption} 
-                    onChange={e => setAnnualConsumption(Number(e.target.value))}
-                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
-                  />
+              <div className="mt-2 pt-2 border-t border-slate-200">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-500 mb-0.5 block">年能耗(TJ)</label>
+                    <input 
+                      type="number" 
+                      value={annualConsumption} 
+                      onChange={e => setAnnualConsumption(Number(e.target.value))}
+                      className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 mb-0.5 block">能源种类</label>
+                    <input 
+                      type="number" 
+                      value={energyTypes} 
+                      onChange={e => setEnergyTypes(Number(e.target.value))}
+                      className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 mb-0.5 block">主要用途</label>
+                    <input 
+                      type="number" 
+                      value={mainUses} 
+                      onChange={e => setMainUses(Number(e.target.value))}
+                      className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[10px] text-slate-500 mb-0.5 block">能源种类</label>
+                {/* RB要求开关 */}
+                <div className="mt-2 flex items-center gap-2">
                   <input 
-                    type="number" 
-                    value={energyTypes} 
-                    onChange={e => setEnergyTypes(Number(e.target.value))}
-                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
+                    type="checkbox" 
+                    id="includeRB"
+                    checked={includeRB} 
+                    onChange={e => setIncludeRB(e.target.checked)} 
+                    className="w-3.5 h-3.5 rounded" 
                   />
+                  <label htmlFor="includeRB" className="text-[10px] text-slate-600">含RB要求（人天-10%）</label>
                 </div>
-                <div>
-                  <label className="text-[10px] text-slate-500 mb-0.5 block">主要用途</label>
-                  <input 
-                    type="number" 
-                    value={mainUses} 
-                    onChange={e => setMainUses(Number(e.target.value))}
-                    className="w-full px-2 py-1.5 border border-slate-300 rounded text-xs"
-                  />
-                </div>
+                {/* 能源复杂程度详情 */}
+                {energyComplexity && (
+                  <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-[10px] space-y-1">
+                    <div className="font-semibold text-amber-800 mb-1">能源复杂程度分析</div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">能耗系数:</span>
+                      <span className="font-medium text-slate-800">{energyComplexity.consumptionCoeff}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">种类系数:</span>
+                      <span className="font-medium text-slate-800">{energyComplexity.typeCoeff}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">主要用途系数:</span>
+                      <span className="font-medium text-slate-800">{energyComplexity.useCoeff}</span>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-amber-200">
+                      <span className="text-slate-600">复杂程度C值:</span>
+                      <span className="font-bold text-amber-700">{energyComplexity.value.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">复杂程度等级:</span>
+                      <span className={`font-bold ${
+                        energyComplexity.level === '高' ? 'text-red-600' :
+                        energyComplexity.level === '中' ? 'text-amber-600' : 'text-green-600'
+                      }`}>{energyComplexity.level}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -350,6 +399,12 @@ export default function SingleSystemPage() {
                   <span className="text-sm font-medium text-slate-600">基础总人天</span>
                   <span className="text-lg font-bold text-slate-800">{baseResult.total.toFixed(1)} 天</span>
                 </div>
+                {/* RB要求提示 */}
+                {system === 'En' && includeRB && (
+                  <div className="mt-1.5 text-[10px] text-indigo-600 bg-indigo-50 rounded px-2 py-1">
+                    已含RB要求，人天已减少10%
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-center py-4 text-slate-400 text-sm">请输入有效人数</div>
