@@ -141,37 +141,7 @@ export default function MultiSystemPage() {
   }, [enabledSystems]);
 
   // IMS合并计算参数
-  const [integrationLevel, setIntegrationLevel] = useState(80); // 整合程度%
-  const [auditorCounts, setAuditorCounts] = useState<number[]>([0, 0, 1, 0]); // [一体系, 二体系, 三体系, 四体系]人数
-
-  // 5x5矩阵（MSWM11-02 图1）
-  const getReductionPercent = (integration: number, capability: number): number => {
-    const intIdx = Math.min(Math.floor(integration / 20), 4);
-    const capIdx = Math.min(Math.floor(capability / 20), 4);
-    const MATRIX = [
-      [0, 0, 0, 0, 0],
-      [0, 5, 5, 5, 5],
-      [0, 5, 10, 10, 10],
-      [0, 5, 10, 15, 15],
-      [0, 5, 10, 15, 20],
-    ];
-    return MATRIX[intIdx][capIdx];
-  };
-
-  // 审核组能力计算
-  const getTeamCapability = useMemo(() => {
-    const enabledCount = systemResults.length;
-    if (enabledCount < 2) return 0;
-    const totalAuditors = auditorCounts.reduce((a, b) => a + b, 0);
-    if (totalAuditors === 0) return 0;
-    let numerator = 0;
-    auditorCounts.forEach((count, idx) => {
-      const qualifications = idx + 1;
-      numerator += (qualifications - 1) * count;
-    });
-    const denominator = totalAuditors * (enabledCount - 1);
-    return denominator > 0 ? (numerator / denominator) * 100 : 0;
-  }, [auditorCounts, systemResults.length]);
+  const [imsReduction, setImsReduction] = useState(0); // IMS减少百分比%
 
   // 合并计算（MSWM11-02 6.9.2）
   const mergedResults = useMemo(() => {
@@ -210,8 +180,7 @@ export default function MultiSystemPage() {
         });
       });
 
-      const capability = getTeamCapability;
-      const reduction = getReductionPercent(integrationLevel, capability);
+      const reduction = imsReduction;
       const finalTotal = Math.round(Ti * (1 - reduction / 100) * 10) / 10;
       // 按比例分配减少量到各组成部分
       const finalOnsite = Math.round(totalOnsite * (1 - reduction / 100) * 10) / 10;
@@ -222,7 +191,6 @@ export default function MultiSystemPage() {
         Ti: Math.round(Ti * 10) / 10, 
         finalTotal, 
         reduction, 
-        capability: Math.round(capability * 100) / 100, 
         details,
         totalOnsite: Math.round(totalOnsite * 10) / 10,
         totalDocReview: Math.round(totalDocReview * 10) / 10,
@@ -237,7 +205,7 @@ export default function MultiSystemPage() {
     return {
       bySelection: calcMergeBySelection(),
     };
-  }, [systemResults, integrationLevel, getTeamCapability]);
+  }, [systemResults, imsReduction]);
 
   const toggleAdjustment = (systemIndex: number, factorId: string) => {
     const config = systems[systemIndex];
@@ -510,50 +478,30 @@ export default function MultiSystemPage() {
                   </table>
                 </div>
 
-                {/* IMS合并计算参数 */}
+                {/* IMS减少百分比选择 */}
                 {systemResults.length > 1 && (
                   <div className="border-t border-slate-200 pt-2">
-                    <div className="text-[10px] font-semibold text-slate-700 mb-1.5">IMS合并计算参数（MSWM11-02 6.9.2）</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-white rounded px-2 py-1.5">
-                        <div className="text-[9px] text-slate-500 mb-0.5">管理体系整合程度</div>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="range"
-                            min="0"
-                            max="100"
-                            step="5"
-                            value={integrationLevel}
-                            onChange={e => setIntegrationLevel(Number(e.target.value))}
-                            className="flex-1 h-1 accent-indigo-600"
-                          />
-                          <span className="text-xs font-bold text-indigo-600 w-10 text-right">{integrationLevel}%</span>
-                        </div>
-                        <div className="text-[8px] text-slate-400 mt-0.5">
-                          {integrationLevel < 40 ? '低：分别建立体系、各自管理评审' : integrationLevel < 80 ? '中：部分整合、统一协调员' : '高：一套整合文件、一体化方法'}
-                        </div>
+                    <div className="text-[10px] font-semibold text-slate-700 mb-1.5">IMS减少百分比（MSWM11-02 6.9.2）</div>
+                    <div className="bg-white rounded px-2 py-1.5">
+                      <div className="text-[9px] text-slate-500 mb-0.5">选择IMS审核时间减少百分比</div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="range"
+                          min="0"
+                          max="20"
+                          step="5"
+                          value={imsReduction}
+                          onChange={e => setImsReduction(Number(e.target.value))}
+                          className="flex-1 h-1 accent-indigo-600"
+                        />
+                        <span className="text-sm font-bold text-indigo-600 w-12 text-right">{imsReduction}%</span>
                       </div>
-                      <div className="bg-white rounded px-2 py-1.5">
-                        <div className="text-[9px] text-slate-500 mb-0.5">审核员资格分布（人数）</div>
-                        <div className="grid grid-cols-2 gap-1">
-                          {['一体系', '二体系', '三体系', '四体系'].map((label, idx) => (
-                            <div key={idx} className="flex items-center gap-0.5">
-                              <span className="text-[8px] text-slate-500 w-8">{label}</span>
-                              <input
-                                type="number"
-                                min="0"
-                                max="20"
-                                value={auditorCounts[idx]}
-                                onChange={e => {
-                                  const newCounts = [...auditorCounts];
-                                  newCounts[idx] = Math.max(0, Number(e.target.value) || 0);
-                                  setAuditorCounts(newCounts);
-                                }}
-                                className="w-10 px-1 py-0.5 text-[10px] border border-slate-200 rounded text-center bg-slate-50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                            </div>
-                          ))}
-                        </div>
+                      <div className="flex justify-between text-[8px] text-slate-400 mt-0.5 px-0.5">
+                        <span>0%</span>
+                        <span>5%</span>
+                        <span>10%</span>
+                        <span>15%</span>
+                        <span>20%</span>
                       </div>
                     </div>
                   </div>
@@ -609,46 +557,9 @@ export default function MultiSystemPage() {
                             ))}
                             <div className="mt-1 font-mono border-t border-slate-200 pt-1">
                               <div>Ti = {mergedResults.bySelection.details.map(d => d.result?.total || 0).join(' + ')} = {mergedResults.bySelection.Ti} 天</div>
-                              <div>审核组能力 = {mergedResults.bySelection.capability}%</div>
-                              <div>整合程度 = {integrationLevel}%，查矩阵 → 减少量 = {mergedResults.bySelection.reduction}%</div>
+                              <div>IMS减少量 = {imsReduction}%</div>
                               <div>最终 = {mergedResults.bySelection.Ti} × (100% - {mergedResults.bySelection.reduction}%) = {mergedResults.bySelection.finalTotal} 天</div>
                             </div>
-                          </div>
-                          {/* 矩阵表格 */}
-                          <div className="mt-1.5 bg-white rounded px-2 py-1">
-                            <div className="text-[8px] font-semibold text-slate-700 mb-1">图1 减少量矩阵</div>
-                            <table className="w-full text-[7px] border-collapse">
-                              <thead>
-                                <tr>
-                                  <th className="border border-slate-200 px-1 py-0.5 bg-slate-100 text-slate-600">整合\能力</th>
-                                  {[0, 20, 40, 60, 80].map(c => (
-                                    <th key={c} className="border border-slate-200 px-1 py-0.5 bg-slate-100 text-slate-600">{c}-{c + 20}%</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {([[0, '0-20%'], [20, '20-40%'], [40, '40-60%'], [60, '60-80%'], [80, '80-100%']] as [number, string][]).map(([rowVal, rowLabel], ri) => {
-                                  const intIdx = ri;
-                                  const capIdx = Math.min(Math.floor(mergedResults.bySelection!.capability / 20), 4);
-                                  const intHighlight = integrationLevel >= rowVal && integrationLevel < rowVal + 20;
-                                  return (
-                                    <tr key={ri}>
-                                      <td className={`border border-slate-200 px-1 py-0.5 text-center ${intHighlight ? 'bg-indigo-100 font-semibold text-indigo-700' : 'bg-slate-50 text-slate-600'}`}>{rowLabel}</td>
-                                      {[0, 5, 10, 15, 20].map((val, ci) => {
-                                        const MATRIX = [[0, 0, 0, 0, 0], [0, 5, 5, 5, 5], [0, 5, 10, 10, 10], [0, 5, 10, 15, 15], [0, 5, 10, 15, 20]];
-                                        const cellVal = MATRIX[intIdx][ci];
-                                        const isHighlight = intHighlight && capIdx === ci;
-                                        return (
-                                          <td key={ci} className={`border border-slate-200 px-1 py-0.5 text-center ${isHighlight ? 'bg-indigo-500 text-white font-bold' : cellVal > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-slate-400'}`}>
-                                            {cellVal}%
-                                          </td>
-                                        );
-                                      })}
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
                           </div>
                         </>
                       )}
