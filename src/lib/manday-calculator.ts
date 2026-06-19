@@ -153,6 +153,9 @@ export function calcEnergy(
   auditType: 'init' | 'monitor' | 'recert',
   hasRB: boolean = false
 ) {
+  let total = 0;
+  let rbAdd = 0;
+  
   if (auditType === 'init') {
     // 手动查找能源表4
     let row: typeof ENERGY_TABLE4[number] | null = null;
@@ -164,10 +167,10 @@ export function calcEnergy(
     }
     if (!row) row = ENERGY_TABLE4[0];
     if (!row) return null;
-    const total = complexityLevel === '高' ? row.high : complexityLevel === '中' ? row.mid : row.low;
+    total = complexityLevel === '高' ? row.high : complexityLevel === '中' ? row.mid : row.low;
     // RB要求下，初次认证增加1个人日
-    const adjustedTotal = hasRB ? total + 1 : total;
-    return { total: adjustedTotal, level: complexityLevel, hasRB, rbAdd: hasRB ? 1 : 0 };
+    rbAdd = hasRB ? 1 : 0;
+    total = total + rbAdd;
   } else {
     // 手动查找能源表5
     let row: typeof ENERGY_TABLE5[number] | null = null;
@@ -181,12 +184,27 @@ export function calcEnergy(
     if (!row) return null;
     const suffix = complexityLevel === '高' ? 'high' : complexityLevel === '中' ? 'mid' : 'low';
     const key = (auditType === 'monitor' ? `mon_${suffix}` : `recert_${suffix}`) as keyof typeof row;
-    const total = (row[key] as number) || 0;
+    total = (row[key] as number) || 0;
     // RB要求下，监督+0.5天，再认证+1天
-    const rbAdd = hasRB ? (auditType === 'monitor' ? 0.5 : 1) : 0;
-    const adjustedTotal = total + rbAdd;
-    return { total: adjustedTotal, level: complexityLevel, hasRB, rbAdd };
+    rbAdd = hasRB ? (auditType === 'monitor' ? 0.5 : 1) : 0;
+    total = total + rbAdd;
   }
+  
+  // 返回与QMS/ES相同格式的字段，便于前端统一渲染
+  // 能源体系：现场审核占80%，文审/报告占20%
+  const onsite = Math.round(total * 0.8 * 10) / 10;
+  const docReview = Math.round(total * 0.2 * 10) / 10;
+  
+  return { 
+    total: Math.round(total * 10) / 10, 
+    level: complexityLevel, 
+    hasRB, 
+    rbAdd,
+    docReview,
+    onsite,
+    phase1: 0,
+    phase2: onsite,
+  };
 }
 
 // ============================================================
@@ -482,10 +500,86 @@ export const ADJUSTMENT_FACTORS: AdjustmentFactor[] = [
     maxPercent: 20,
     defaultPercent: 10,
   },
+
+  // ========== En体系减少因素 (MSWM102-2 4.7.1 & 4.7.2) ==========
+  {
+    id: 'en_mature',
+    system: 'En',
+    direction: 'reduce',
+    description: '管理体系的成熟度（能源管理体系运行成熟，有完善的能源绩效改进机制）',
+    rule: '减少量不超过30%',
+    maxPercent: 30,
+    defaultPercent: 10,
+  },
+  {
+    id: 'en_verified_claim',
+    system: 'En',
+    direction: 'reduce',
+    description: '当前认证周期内与能源绩效改进有关的已认可的核查宣称',
+    rule: '减少量不超过30%',
+    maxPercent: 30,
+    defaultPercent: 10,
+  },
+
+  // ========== En体系增加因素 (MSWM102-2 4.7.1) ==========
+  {
+    id: 'en_logistics',
+    system: 'En',
+    direction: 'increase',
+    description: '物流和大型场所（复杂的物流系统或大型生产场所）',
+    rule: '增加量视情况而定',
+    maxPercent: 30,
+    defaultPercent: 10,
+  },
+  {
+    id: 'en_multilang',
+    system: 'En',
+    direction: 'increase',
+    description: '使用多种语言进行审核',
+    rule: '增加量视情况而定',
+    maxPercent: 20,
+    defaultPercent: 10,
+  },
+  {
+    id: 'en_org_change',
+    system: 'En',
+    direction: 'increase',
+    description: '客户组织的变化（如并购、重组、组织架构重大调整）',
+    rule: '增加量视情况而定',
+    maxPercent: 30,
+    defaultPercent: 10,
+  },
+  {
+    id: 'en_prior_findings',
+    system: 'En',
+    direction: 'increase',
+    description: '以往的审核发现（如上次审核有重大不符合项）',
+    rule: '增加量视情况而定',
+    maxPercent: 20,
+    defaultPercent: 10,
+  },
+  {
+    id: 'en_onsite_production',
+    system: 'En',
+    direction: 'increase',
+    description: '现场能源的生产（例如：边界内的蒸汽生产、热电联产）',
+    rule: '增加量视情况而定',
+    maxPercent: 20,
+    defaultPercent: 10,
+  },
+  {
+    id: 'en_multi_role',
+    system: 'En',
+    direction: 'increase',
+    description: '一个人拥有多个未计入能源管理体系有效人数的角色',
+    rule: '增加量视情况而定',
+    maxPercent: 20,
+    defaultPercent: 10,
+  },
 ];
 
 // 获取指定体系的增减因子
-export function getFactorsForSystem(system: 'Q' | 'E' | 'S'): AdjustmentFactor[] {
+export function getFactorsForSystem(system: 'Q' | 'E' | 'S' | 'En'): AdjustmentFactor[] {
   return ADJUSTMENT_FACTORS.filter(f => f.system === system || f.system === 'common');
 }
 
