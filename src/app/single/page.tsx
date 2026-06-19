@@ -443,6 +443,24 @@ export default function SingleSystemPage() {
                         ✓ 节约 {adjustedResult.savedDays} 人天
                       </div>
                     )}
+                    {/* 现场人天减少公式 */}
+                    {auditType === 'initial' && adjustedResult.reduction > 0 && (
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-100">
+                        <div className="text-[9px] text-slate-500 mb-1">现场人天减少计算：</div>
+                        <div className="text-[9px] font-mono text-slate-600 bg-green-50 p-1 rounded leading-relaxed">
+                          一阶段: {(baseResult as unknown as Record<string, number>).phase1?.toFixed(1)} × (1 - {adjustedResult.reduction}%) = {adjustedResult.phase1} 天<br/>
+                          二阶段: {(baseResult as unknown as Record<string, number>).phase2?.toFixed(1)} × (1 - {adjustedResult.reduction}%) = {adjustedResult.phase2} 天
+                        </div>
+                      </div>
+                    )}
+                    {auditType !== 'initial' && adjustedResult.reduction > 0 && (
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-100">
+                        <div className="text-[9px] text-slate-500 mb-1">现场人天减少计算：</div>
+                        <div className="text-[9px] font-mono text-slate-600 bg-green-50 p-1 rounded leading-relaxed">
+                          现场审核: {(baseResult as unknown as Record<string, number>).onsite?.toFixed(1)} × (1 - {adjustedResult.reduction}%) = {adjustedResult.onsite} 天
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

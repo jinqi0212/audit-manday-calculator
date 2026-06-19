@@ -206,6 +206,17 @@ export default function CodeSearch({ onSelect, compact = false }: CodeSearchProp
               </div>
             </div>
           </div>
+          {/* 专业描述 - 折叠显示 */}
+          {selected.description && (
+            <details className="mt-1.5">
+              <summary className="text-[10px] text-indigo-600 cursor-pointer hover:text-indigo-800 font-medium">
+                查看专业描述
+              </summary>
+              <div className="mt-1 p-1.5 bg-white rounded border border-slate-200 max-h-16 overflow-y-auto">
+                <div className="text-[10px] text-slate-600 leading-relaxed">{selected.description}</div>
+              </div>
+            </details>
+          )}
         </div>
       )}
     </div>

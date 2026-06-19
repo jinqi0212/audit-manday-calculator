@@ -344,9 +344,24 @@ export default function MultiSystemPage() {
                           </div>
                         )}
                         {(r.reduction > 0 || r.increase > 0) && (
-                          <div className="text-[8px] text-slate-500 pt-0.5 border-t border-slate-100">
+                          <div className="text-[8px] text-slate-500 pt-0.5 border-t border-slate-100 space-y-0.5">
                             {r.reduction > 0 && <span className="text-green-600">减少{r.reduction}% </span>}
                             {r.increase > 0 && <span className="text-red-600">增加{r.increase}%</span>}
+                            {r.config.system === 'Q' && r.config.auditType === 'initial' && r.reduction > 0 && (
+                              <div className="text-[8px] text-green-700 bg-green-50 rounded px-1 py-0.5">
+                                现场人天减少公式: {(r.base as any).phase2} × (1 - {r.reduction}%) = {r.adjusted.phase2} 天
+                              </div>
+                            )}
+                            {r.config.system === 'Q' && r.config.auditType !== 'initial' && r.reduction > 0 && (
+                              <div className="text-[8px] text-green-700 bg-green-50 rounded px-1 py-0.5">
+                                现场人天减少公式: {(r.base as any).onsite} × (1 - {r.reduction}%) = {r.adjusted.onsite} 天
+                              </div>
+                            )}
+                            {(r.config.system === 'E' || r.config.system === 'S' || r.config.system === 'En') && r.reduction > 0 && (
+                              <div className="text-[8px] text-green-700 bg-green-50 rounded px-1 py-0.5">
+                                现场人天减少公式: {(r.base as any).onsite} × (1 - {r.reduction}%) = {r.adjusted.onsite} 天
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
