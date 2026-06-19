@@ -151,6 +151,15 @@ export default function IMSPage() {
         </div>
       </header>
 
+      {/* 依据文件信息 */}
+      <div className="bg-indigo-50 border-b border-indigo-100">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[10px] text-indigo-700">
+          <span className="font-medium">依据文件：</span>
+          <span>MSWM11-02《管理体系结合审核实施规范》</span>
+          <span>MSWM102-2《管理体系审核人天数确定指南》</span>
+        </div>
+      </div>
+
       <main className="max-w-7xl mx-auto px-3 md:px-6 py-4 md:py-6">
         {/* 三栏布局 */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

@@ -11,6 +11,18 @@ export default function HomePage() {
         </div>
       </header>
 
+      {/* 依据文件信息 */}
+      <div className="bg-indigo-50 border-b border-indigo-100">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-indigo-700">
+          <span className="flex items-center gap-1.5">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            <span className="font-medium">依据文件：</span>
+          </span>
+          <span>MSWM11-02《管理体系结合审核实施规范》</span>
+          <span>MSWM102-2《管理体系审核人天数确定指南》</span>
+        </div>
+      </div>
+
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">

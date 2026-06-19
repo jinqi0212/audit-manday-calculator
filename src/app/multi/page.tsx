@@ -44,6 +44,7 @@ interface AuditResult {
   phase1?: number;
   phase2?: number;
   onsite?: number;
+  totalOnsite?: number;
   rbAdd?: number;
 }
 
@@ -105,17 +106,22 @@ export default function MultiSystemPage() {
 
       if (totalReduction > 0.3) totalReduction = 0.3;
 
-      const applyAdjustment = (result: AuditResult | null): { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number } | null => {
+      const applyAdjustment = (result: AuditResult | null): { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number; totalOnsite?: number } | null => {
         if (!result) return null;
         const adjustedTotal = result.total * (1 - totalReduction + totalIncrease);
         const ratio = adjustedTotal / result.total;
-        return {
+        const adjusted: { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number; totalOnsite?: number } = {
           total: Math.round(adjustedTotal * 10) / 10,
           docReview: Math.round(result.docReview * ratio * 10) / 10,
           phase1: result.phase1 ? Math.round(result.phase1 * ratio * 10) / 10 : undefined,
           phase2: result.phase2 ? Math.round(result.phase2 * ratio * 10) / 10 : undefined,
           onsite: result.onsite ? Math.round(result.onsite * ratio * 10) / 10 : undefined,
         };
+        // 初审：现场人天 = phase1 + phase2
+        if (result.totalOnsite) {
+          adjusted.totalOnsite = Math.round(result.totalOnsite * ratio * 10) / 10;
+        }
+        return adjusted;
       };
 
       return {
@@ -223,6 +229,15 @@ export default function MultiSystemPage() {
           <Link href="/" className="text-xs md:text-sm text-slate-300 hover:text-white">← 返回</Link>
         </div>
       </header>
+
+      {/* 依据文件信息 */}
+      <div className="bg-indigo-50 border-b border-indigo-100">
+        <div className="max-w-[1800px] mx-auto px-2 md:px-4 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[10px] text-indigo-700">
+          <span className="font-medium">依据文件：</span>
+          <span>MSWM11-02《管理体系结合审核实施规范》</span>
+          <span>MSWM102-2《管理体系审核人天数确定指南》</span>
+        </div>
+      </div>
 
       <div className="max-w-[1800px] mx-auto p-2 md:p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
         {/* 左侧：代码查询 + 体系配置 */}
@@ -634,6 +649,88 @@ export default function MultiSystemPage() {
                   </div>
                 </div>
 
+                {/* 现场人天实际情况明细 */}
+                <div className="border-t border-slate-200 pt-2 mt-2">
+                  <div className="text-[10px] font-semibold text-slate-700 mb-1.5">现场人天实际情况（基数 vs 打折后）</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[9px] border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 border border-slate-200">
+                          <th className="px-2 py-1 text-left font-semibold" rowSpan={2}>体系</th>
+                          <th className="px-1 py-1 text-center font-semibold border-l border-slate-200" colSpan={3}>初次认证（现场）</th>
+                          <th className="px-1 py-1 text-center font-semibold border-l border-slate-200" colSpan={3}>监督审核（现场）</th>
+                          <th className="px-1 py-1 text-center font-semibold border-l border-slate-200" colSpan={3}>再认证（现场）</th>
+                        </tr>
+                        <tr className="bg-slate-50 border border-slate-200">
+                          <th className="px-1 py-0.5 text-center text-slate-500 border-l border-slate-200">基数</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">打折后</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">节省</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500 border-l border-slate-200">基数</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">打折后</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">节省</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500 border-l border-slate-200">基数</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">打折后</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">节省</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {systemResults.map((r, i) => {
+                          if (!r) return null;
+                          // 初审现场基数
+                          const initBaseOnsite = r.initBase?.totalOnsite ?? ((r.initBase?.phase1 ?? 0) + (r.initBase?.phase2 ?? 0));
+                          // 初审现场打折后
+                          const initAdjOnsite = r.init?.totalOnsite ?? ((r.init?.phase1 ?? 0) + (r.init?.phase2 ?? 0));
+                          // 监督现场基数
+                          const monBaseOnsite = r.monitorBase?.onsite ?? 0;
+                          // 监督现场打折后
+                          const monAdjOnsite = r.monitor?.onsite ?? 0;
+                          // 再认证现场基数
+                          const recertBaseOnsite = r.recertBase?.onsite ?? 0;
+                          // 再认证现场打折后
+                          const recertAdjOnsite = r.recert?.onsite ?? 0;
+                          const hasAdj = r.reduction > 0 || r.increase > 0;
+                          return (
+                            <tr key={i} className="border-t border-slate-100 hover:bg-slate-50">
+                              <td className="px-2 py-1.5">
+                                <span className={`text-[9px] font-medium text-white px-1 py-0.5 rounded ${SYSTEM_COLORS[r.config.system]}`}>
+                                  {SYSTEM_NAMES[r.config.system]}
+                                </span>
+                              </td>
+                              {/* 初审现场 */}
+                              <td className="px-1 py-1.5 text-center text-slate-500 border-l border-slate-200">{initBaseOnsite || '-'}</td>
+                              <td className="px-1 py-1.5 text-center font-semibold text-indigo-700">{initAdjOnsite || '-'}</td>
+                              <td className="px-1 py-1.5 text-center">
+                                {hasAdj && initBaseOnsite ? (
+                                  <span className="text-green-600">↓{(initBaseOnsite - initAdjOnsite).toFixed(1)}</span>
+                                ) : '-'}
+                              </td>
+                              {/* 监督现场 */}
+                              <td className="px-1 py-1.5 text-center text-slate-500 border-l border-slate-200">{monBaseOnsite || '-'}</td>
+                              <td className="px-1 py-1.5 text-center font-semibold text-emerald-700">{monAdjOnsite || '-'}</td>
+                              <td className="px-1 py-1.5 text-center">
+                                {hasAdj && monBaseOnsite ? (
+                                  <span className="text-green-600">↓{(monBaseOnsite - monAdjOnsite).toFixed(1)}</span>
+                                ) : '-'}
+                              </td>
+                              {/* 再认证现场 */}
+                              <td className="px-1 py-1.5 text-center text-slate-500 border-l border-slate-200">{recertBaseOnsite || '-'}</td>
+                              <td className="px-1 py-1.5 text-center font-semibold text-amber-700">{recertAdjOnsite || '-'}</td>
+                              <td className="px-1 py-1.5 text-center">
+                                {hasAdj && recertBaseOnsite ? (
+                                  <span className="text-green-600">↓{(recertBaseOnsite - recertAdjOnsite).toFixed(1)}</span>
+                                ) : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[8px] text-slate-500 mt-1">
+                    基数 = 查表所得现场人天；打折后 = 基数 × (1 - 减少% + 增加%)；节省 = 基数 - 打折后
+                  </div>
+                </div>
+
                 {/* 各体系详情 */}
                 <div className="border-t border-slate-200 pt-2 mt-2">
                   <div className="text-[10px] font-semibold text-slate-700 mb-1.5">各体系详情</div>
@@ -707,8 +804,8 @@ export default function MultiSystemPage() {
                               <div>文审: {r.init?.docReview}天</div>
                               {r.init?.phase1 !== undefined && <div>一阶段: {r.init?.phase1}天</div>}
                               {r.init?.phase2 !== undefined && <div>二阶段: {r.init?.phase2}天</div>}
-                              {r.init?.onsite !== undefined && <div>现场: {r.init?.onsite}天</div>}
-                              <div className="font-semibold pt-0.5 border-t border-indigo-200">合计: {r.init?.total}天</div>
+                              {r.init?.totalOnsite !== undefined && <div>现场合计: {r.init?.totalOnsite}天</div>}
+                              <div className="font-semibold pt-0.5 border-t border-indigo-200">总合计: {r.init?.total}天</div>
                             </div>
                           </div>
                           <div className="bg-emerald-50 rounded p-1.5">

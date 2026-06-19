@@ -132,6 +132,15 @@ export default function SingleSystemPage() {
         <Link href="/" className="text-sm text-slate-300 hover:text-white">← 返回</Link>
       </header>
 
+      {/* 依据文件信息 */}
+      <div className="bg-indigo-50 border-b border-indigo-100">
+        <div className="max-w-[1400px] mx-auto px-3 md:px-4 py-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[10px] text-indigo-700">
+          <span className="font-medium">依据文件：</span>
+          <span>MSWM11-02《管理体系结合审核实施规范》</span>
+          <span>MSWM102-2《管理体系审核人天数确定指南》</span>
+        </div>
+      </div>
+
       <div className="max-w-[1400px] mx-auto p-3 md:p-4 grid grid-cols-1 md:grid-cols-12 gap-3">
         {/* 左侧：代码查询 + 配置 */}
         <div className="col-span-1 md:col-span-4 space-y-3">
