@@ -191,9 +191,19 @@ export function calcEnergy(
   }
   
   // 返回与QMS/ES相同格式的字段，便于前端统一渲染
-  // 能源体系：现场审核占80%，文审/报告占20%
-  const onsite = Math.round(total * 0.8 * 10) / 10;
+  // 能源体系初次认证：文审/报告20%，现场80%（一阶段20%，二阶段80%）
+  // 监督/再认证：文审/报告20%，现场80%（无阶段划分）
   const docReview = Math.round(total * 0.2 * 10) / 10;
+  const onsite = Math.round(total * 0.8 * 10) / 10;
+  
+  let phase1 = 0;
+  let phase2 = onsite;
+  
+  if (auditType === 'init') {
+    // 初次认证：一阶段占现场的20%，二阶段占现场的80%
+    phase1 = Math.round(onsite * 0.2 * 10) / 10;
+    phase2 = Math.round(onsite * 0.8 * 10) / 10;
+  }
   
   return { 
     total: Math.round(total * 10) / 10, 
@@ -202,8 +212,8 @@ export function calcEnergy(
     rbAdd,
     docReview,
     onsite,
-    phase1: 0,
-    phase2: onsite,
+    phase1,
+    phase2,
   };
 }
 
