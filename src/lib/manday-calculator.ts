@@ -213,7 +213,7 @@ export function calcEnergy(
 
 export interface AdjustmentFactor {
   id: string;
-  system: 'Q' | 'E' | 'S' | 'common';
+  system: 'Q' | 'E' | 'S' | 'En' | 'common';
   direction: 'reduce' | 'increase';
   description: string;
   rule: string;
@@ -688,5 +688,140 @@ export function calcTeamCapability(
     coveredCompetencies,
     missingCompetencies,
     maxReductionPercent,
+  };
+}
+
+// ============================================================
+// IMS结合审核时间计算 - 来源于MSWM11-02 6.9条
+// ============================================================
+
+export interface IMSAuditor {
+  id: string;
+  name: string;
+  standardsCount: number; // 该审核员具备的标准审核能力数量(Xi)
+}
+
+export interface IMSSResult {
+  /** 审核组能力程度(%) */
+  teamCapabilityPercent: number;
+  /** 审核组能力公式描述 */
+  teamCapabilityFormula: string;
+  /** 整合程度(%) */
+  integrationLevel: number;
+  /** 整合程度等级描述 */
+  integrationLevelLabel: string;
+  /** 减少量(%) */
+  reductionPercent: number;
+  /** 各体系起始人天 */
+  systemDays: { system: string; days: number }[];
+  /** 起始点Ti */
+  totalTi: number;
+  /** 最终审核时间T */
+  finalDays: number;
+  /** 计算公式描述 */
+  formulaDescription: string;
+  /** 审核时间最多减少量说明 */
+  maxReductionNote: string;
+}
+
+// 整合程度等级
+export function getIntegrationLevelLabel(level: number): string {
+  if (level < 40) return '低(0%-40%)';
+  if (level < 80) return '中(40%-80%)';
+  return '高(80%-100%)';
+}
+
+// 图1矩阵表 - 结合审核时间减少量(%)
+// 纵轴: 整合程度(低/中/高), 横轴: 审核组能力程度(低/中/高)
+// 减少量不超过Ti的20%
+export function getIMSReduction(integrationLevel: number, teamCapability: number): number {
+  // 整合程度分档
+  let intLevel: 'low' | 'mid' | 'high';
+  if (integrationLevel < 40) intLevel = 'low';
+  else if (integrationLevel < 80) intLevel = 'mid';
+  else intLevel = 'high';
+
+  // 审核组能力分档
+  let capLevel: 'low' | 'mid' | 'high';
+  if (teamCapability < 33) capLevel = 'low';
+  else if (teamCapability < 67) capLevel = 'mid';
+  else capLevel = 'high';
+
+  // 矩阵表(减少量%)
+  // 整合程度低: 能力低=0%, 能力中=2%, 能力高=5%
+  // 整合程度中: 能力低=2%, 能力中=5%, 能力高=10%
+  // 整合程度高: 能力低=5%, 能力中=10%, 能力高=20%
+  const matrix: Record<string, Record<string, number>> = {
+    'low': { 'low': 0, 'mid': 2, 'high': 5 },
+    'mid': { 'low': 2, 'mid': 5, 'high': 10 },
+    'high': { 'low': 5, 'mid': 10, 'high': 20 },
+  };
+
+  return matrix[intLevel]?.[capLevel] ?? 0;
+}
+
+export function calcIMS(
+  auditors: IMSAuditor[],
+  standardCount: number, // Y: IMS涵盖的标准数量
+  integrationLevel: number, // 整合程度(0-100)
+  systemDays: { system: string; days: number }[] // 各体系审核人天
+): IMSSResult {
+  const Z = auditors.length; // 审核员数量
+  const Y = standardCount; // 标准数量
+
+  // 计算审核组能力程度
+  let teamCapabilityPercent = 0;
+  let teamCapabilityFormula = '';
+
+  if (Z === 0 || Y <= 1) {
+    teamCapabilityPercent = 0;
+    teamCapabilityFormula = Y <= 1 ? '仅1个体系，无需计算IMS' : '无审核员';
+  } else if (Z === 1) {
+    // 单个审核员
+    const x1 = auditors[0].standardsCount;
+    teamCapabilityPercent = x1 >= Y ? 100 : (x1 / Y) * 100;
+    teamCapabilityFormula = `仅1名审核员，具备${x1}个标准能力/共${Y}个标准 = ${Math.round(teamCapabilityPercent)}%`;
+  } else {
+    // 多个审核员: [(X1-1)+(X2-1)+...+(Xn-1)] / [Z×(Y-1)] × 100%
+    let numeratorSum = 0;
+    const parts: string[] = [];
+    auditors.forEach((a, i) => {
+      const xi = Math.min(a.standardsCount, Y);
+      const val = xi - 1;
+      numeratorSum += val;
+      parts.push(`(X${i + 1}-1)=(${xi}-1)=${val}`);
+    });
+    const denominator = Z * (Y - 1);
+    teamCapabilityPercent = denominator > 0 ? (numeratorSum / denominator) * 100 : 0;
+    teamCapabilityPercent = Math.round(teamCapabilityPercent * 100) / 100;
+
+    const numeratorStr = parts.join(' + ');
+    teamCapabilityFormula = `[${numeratorStr}] / [Z(${Z}) × (Y-1)(${Y - 1})] × 100% = [${numeratorSum}] / [${denominator}] × 100% = ${teamCapabilityPercent}%`;
+  }
+
+  // 查矩阵得减少量
+  const reductionPercent = getIMSReduction(integrationLevel, teamCapabilityPercent);
+
+  // 计算起始点Ti
+  const totalTi = systemDays.reduce((sum, s) => sum + s.days, 0);
+
+  // 最终审核时间
+  const finalDays = Math.round(totalTi * (1 - reductionPercent / 100) * 10) / 10;
+
+  // 公式描述
+  const systemStr = systemDays.map(s => `T${s.system}=${s.days}`).join(' + ');
+  const formulaDescription = `Ti = ${systemStr} = ${totalTi}人天\n最终审核时间 T = Ti × (100% - 减少量${reductionPercent}%) = ${totalTi} × ${(100 - reductionPercent)}% = ${finalDays}人天`;
+
+  return {
+    teamCapabilityPercent,
+    teamCapabilityFormula,
+    integrationLevel,
+    integrationLevelLabel: getIntegrationLevelLabel(integrationLevel),
+    reductionPercent,
+    systemDays,
+    totalTi: Math.round(totalTi * 10) / 10,
+    finalDays,
+    formulaDescription,
+    maxReductionNote: 'IMS审核可能导致审核时间增加，但在减少审核时间的情况下，减少量不应超过起始点时间Ti的20%。',
   };
 }

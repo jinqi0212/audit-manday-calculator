@@ -13,23 +13,22 @@ export default function HomePage() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-6 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
           {/* 单体系计算 */}
           <Link href="/single" className="group">
-            <div className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-200 p-8 border-2 border-transparent hover:border-indigo-500">
-              <div className="flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-xl mb-6 group-hover:bg-indigo-500 transition-colors">
-                <svg className="w-8 h-8 text-indigo-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-200 p-6 border-2 border-transparent hover:border-indigo-500 h-full">
+              <div className="flex items-center justify-center w-14 h-14 bg-indigo-100 rounded-xl mb-4 group-hover:bg-indigo-500 transition-colors">
+                <svg className="w-7 h-7 text-indigo-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-slate-800 mb-3">单体系计算</h2>
-              <p className="text-slate-600 leading-relaxed">
-                适用于单一管理体系的审核人天计算，支持 QMS、EMS、OHSMS、EnMS 体系。
-                界面简洁，快速完成单个体系的审核人天评估。
+              <h2 className="text-xl font-bold text-slate-800 mb-2">单体系计算</h2>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                单一管理体系审核人天计算，支持 QMS、EMS、OHSMS、EnMS。
               </p>
-              <div className="mt-6 flex items-center text-indigo-600 font-medium">
+              <div className="mt-4 flex items-center text-indigo-600 font-medium text-sm">
                 <span>开始计算</span>
-                <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
               </div>
@@ -38,20 +37,40 @@ export default function HomePage() {
 
           {/* 多体系计算 */}
           <Link href="/multi" className="group">
-            <div className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-200 p-8 border-2 border-transparent hover:border-emerald-500">
-              <div className="flex items-center justify-center w-16 h-16 bg-emerald-100 rounded-xl mb-6 group-hover:bg-emerald-500 transition-colors">
-                <svg className="w-8 h-8 text-emerald-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-200 p-6 border-2 border-transparent hover:border-emerald-500 h-full">
+              <div className="flex items-center justify-center w-14 h-14 bg-emerald-100 rounded-xl mb-4 group-hover:bg-emerald-500 transition-colors">
+                <svg className="w-7 h-7 text-emerald-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-slate-800 mb-3">多体系计算</h2>
-              <p className="text-slate-600 leading-relaxed">
-                适用于多管理体系联合审核，各体系可独立配置有效人数、风险等级、审核类型。
-                自动计算合并人天，支持差异化调整因子。
+              <h2 className="text-xl font-bold text-slate-800 mb-2">多体系计算</h2>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                多体系联合审核，同时显示初审/监督/再认证人天，支持差异化调整。
               </p>
-              <div className="mt-6 flex items-center text-emerald-600 font-medium">
+              <div className="mt-4 flex items-center text-emerald-600 font-medium text-sm">
                 <span>开始计算</span>
-                <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </div>
+            </div>
+          </Link>
+
+          {/* IMS结合审核 */}
+          <Link href="/ims" className="group">
+            <div className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all duration-200 p-6 border-2 border-transparent hover:border-purple-500 h-full">
+              <div className="flex items-center justify-center w-14 h-14 bg-purple-100 rounded-xl mb-4 group-hover:bg-purple-500 transition-colors">
+                <svg className="w-7 h-7 text-purple-600 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <h2 className="text-xl font-bold text-slate-800 mb-2">IMS结合审核</h2>
+              <p className="text-slate-600 text-sm leading-relaxed">
+                计算整合程度与审核组能力，查矩阵表得出结合审核减少量。
+              </p>
+              <div className="mt-4 flex items-center text-purple-600 font-medium text-sm">
+                <span>开始计算</span>
+                <svg className="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                 </svg>
               </div>

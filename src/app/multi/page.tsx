@@ -7,19 +7,11 @@ import { calcQMS, calcES, calcEnergy, calcEnergyComplexity, ADJUSTMENT_FACTORS }
 import type { CodeEntry } from '@/data/codes';
 
 type SystemType = 'Q' | 'E' | 'S' | 'En';
-type AuditType = 'initial' | 'surveillance' | 'recertification';
 type InternalAuditType = 'init' | 'monitor' | 'recert';
-
-const toInternalAuditType = (t: AuditType): InternalAuditType => {
-  if (t === 'initial') return 'init';
-  if (t === 'surveillance') return 'monitor';
-  return 'recert';
-};
 
 interface SystemConfig {
   enabled: boolean;
   system: SystemType;
-  auditType: AuditType;
   effectiveCount: number;
   riskLevel: string;
   annualConsumption: number;
@@ -31,10 +23,10 @@ interface SystemConfig {
 }
 
 const DEFAULT_SYSTEMS: SystemConfig[] = [
-  { enabled: true, system: 'Q', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'E', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'S', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'En', auditType: 'initial', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyUnit: 'TJ', energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
+  { enabled: true, system: 'Q', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'E', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'S', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'En', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyUnit: 'TJ', energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
 ];
 
 const SYSTEM_NAMES: Record<string, string> = {
@@ -44,6 +36,15 @@ const SYSTEM_NAMES: Record<string, string> = {
 const SYSTEM_COLORS: Record<string, string> = {
   Q: 'bg-indigo-500', E: 'bg-emerald-500', S: 'bg-amber-500', En: 'bg-orange-500',
 };
+
+interface AuditResult {
+  total: number;
+  docReview: number;
+  phase1?: number;
+  phase2?: number;
+  onsite?: number;
+  rbAdd?: number;
+}
 
 export default function MultiSystemPage() {
   const [selectedCode, setSelectedCode] = useState<CodeEntry | null>(null);
@@ -59,27 +60,30 @@ export default function MultiSystemPage() {
 
   const enabledSystems = useMemo(() => systems.filter(s => s.enabled), [systems]);
 
-  // 计算各体系人天
+  // 计算各体系三种审核类型的人天
   const systemResults = useMemo(() => {
     return enabledSystems.map(config => {
-      const internalAuditType = toInternalAuditType(config.auditType);
-      let result;
-      let energyComplexity = null;
-      
-      if (config.system === 'Q') {
-        result = calcQMS(config.effectiveCount, config.riskLevel, internalAuditType);
-      } else if (config.system === 'E' || config.system === 'S') {
-        result = calcES(config.effectiveCount, config.riskLevel, internalAuditType);
-      } else if (config.system === 'En') {
-        // 先计算能源复杂程度
-        if (config.annualConsumption > 0) {
-          energyComplexity = calcEnergyComplexity(config.annualConsumption, config.energyTypes, config.mainUses, config.energyUnit);
-          result = calcEnergy(config.effectiveCount, energyComplexity.level, internalAuditType, config.includeRB);
+      const energyComplexity = config.system === 'En' && config.annualConsumption > 0
+        ? calcEnergyComplexity(config.annualConsumption, config.energyTypes, config.mainUses, config.energyUnit)
+        : null;
+
+      const calcForType = (auditType: InternalAuditType): AuditResult | null => {
+        let result;
+        if (config.system === 'Q') {
+          result = calcQMS(config.effectiveCount, config.riskLevel, auditType);
+        } else if (config.system === 'E' || config.system === 'S') {
+          result = calcES(config.effectiveCount, config.riskLevel, auditType);
+        } else if (config.system === 'En' && energyComplexity) {
+          result = calcEnergy(config.effectiveCount, energyComplexity.level, auditType, config.includeRB);
         }
-      }
+        return result as AuditResult | null;
+      };
 
-      if (!result) return null;
+      const initResult = calcForType('init');
+      const monitorResult = calcForType('monitor');
+      const recertResult = calcForType('recert');
 
+      // 计算调整因子
       const systemFilter = config.system === 'En' ? 'common' : config.system;
       const applicableFactors = ADJUSTMENT_FACTORS.filter(
         f => f.system === systemFilter || f.system === 'common'
@@ -100,58 +104,65 @@ export default function MultiSystemPage() {
 
       if (totalReduction > 0.3) totalReduction = 0.3;
 
-      const adjustedTotal = result.total * (1 - totalReduction + totalIncrease);
-      const ratio = adjustedTotal / result.total;
-      const baseData = result as unknown as Record<string, number>;
+      const applyAdjustment = (result: AuditResult | null): { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number } | null => {
+        if (!result) return null;
+        const adjustedTotal = result.total * (1 - totalReduction + totalIncrease);
+        const ratio = adjustedTotal / result.total;
+        return {
+          total: Math.round(adjustedTotal * 10) / 10,
+          docReview: Math.round(result.docReview * ratio * 10) / 10,
+          phase1: result.phase1 ? Math.round(result.phase1 * ratio * 10) / 10 : undefined,
+          phase2: result.phase2 ? Math.round(result.phase2 * ratio * 10) / 10 : undefined,
+          onsite: result.onsite ? Math.round(result.onsite * ratio * 10) / 10 : undefined,
+        };
+      };
 
       return {
         config,
-        base: result,
         energyComplexity,
-        adjusted: {
-          total: Math.round(adjustedTotal * 10) / 10,
-          docReview: Math.round(baseData.docReview * ratio * 10) / 10,
-          phase1: baseData.phase1 ? Math.round(baseData.phase1 * ratio * 10) / 10 : undefined,
-          phase2: baseData.phase2 ? Math.round(baseData.phase2 * ratio * 10) / 10 : undefined,
-          onsite: baseData.onsite ? Math.round(baseData.onsite * ratio * 10) / 10 : undefined,
-        },
+        init: applyAdjustment(initResult),
+        monitor: applyAdjustment(monitorResult),
+        recert: applyAdjustment(recertResult),
+        initBase: initResult,
+        monitorBase: monitorResult,
+        recertBase: recertResult,
         reduction: Math.round(totalReduction * 100),
         increase: Math.round(totalIncrease * 100),
       };
-    }).filter(r => r !== null);
+    }).filter(r => r.init !== null);
   }, [enabledSystems]);
 
-  // 合并计算
-  const mergedResult = useMemo(() => {
+  // 合并计算（三种审核类型）
+  const mergedResults = useMemo(() => {
     if (systemResults.length === 0) return null;
 
-    let totalDocReview = 0;
-    let maxOnsite = 0;
-    let totalOnsite = 0;
+    const calcMerge = (type: 'init' | 'monitor' | 'recert') => {
+      let totalDocReview = 0;
+      let maxOnsite = 0;
 
-    systemResults.forEach(r => {
-      if (!r) return;
-      totalDocReview += r.adjusted.docReview;
-      if (r.config.auditType === 'initial') {
-        const onsite = (r.adjusted.phase1 || 0) + (r.adjusted.phase2 || 0);
-        maxOnsite = Math.max(maxOnsite, onsite);
-        totalOnsite += onsite;
-      } else {
-        maxOnsite = Math.max(maxOnsite, r.adjusted.onsite || 0);
-        totalOnsite += r.adjusted.onsite || 0;
-      }
-    });
+      systemResults.forEach(r => {
+        const result = r[type];
+        if (!result) return;
+        totalDocReview += result.docReview;
+        if (type === 'init') {
+          const onsite = (result.phase1 || 0) + (result.phase2 || 0);
+          maxOnsite = Math.max(maxOnsite, onsite);
+        } else {
+          maxOnsite = Math.max(maxOnsite, result.onsite || 0);
+        }
+      });
 
-    const mergeRatio = systemResults.length > 1 ? 1 + (systemResults.length - 1) * 0.2 : 1;
-    const mergedOnsite = Math.round(maxOnsite * mergeRatio * 10) / 10;
-    const mergedTotal = Math.round((totalDocReview + mergedOnsite) * 10) / 10;
+      const mergeRatio = systemResults.length > 1 ? 1 + (systemResults.length - 1) * 0.2 : 1;
+      const mergedOnsite = Math.round(maxOnsite * mergeRatio * 10) / 10;
+      const mergedTotal = Math.round((totalDocReview + mergedOnsite) * 10) / 10;
+
+      return { totalDocReview: Math.round(totalDocReview * 10) / 10, mergedOnsite, mergedTotal };
+    };
 
     return {
-      totalDocReview: Math.round(totalDocReview * 10) / 10,
-      mergedOnsite,
-      mergedTotal,
-      mergeRatio,
-      totalOnsite: Math.round(totalOnsite * 10) / 10,
+      init: calcMerge('init'),
+      monitor: calcMerge('monitor'),
+      recert: calcMerge('recert'),
     };
   }, [systemResults]);
 
@@ -174,12 +185,15 @@ export default function MultiSystemPage() {
     <div className="min-h-screen bg-slate-50">
       <header className="bg-slate-800 text-white px-6 py-3 flex items-center justify-between shadow-md">
         <h1 className="text-lg font-semibold">多体系审核人天计算</h1>
-        <Link href="/" className="text-sm text-slate-300 hover:text-white">← 返回首页</Link>
+        <div className="flex items-center gap-3">
+          <Link href="/ims" className="text-sm text-slate-300 hover:text-white">IMS计算 →</Link>
+          <Link href="/" className="text-sm text-slate-300 hover:text-white">← 返回首页</Link>
+        </div>
       </header>
 
-      <div className="max-w-[1600px] mx-auto p-3 grid grid-cols-12 gap-3">
+      <div className="max-w-[1800px] mx-auto p-3 grid grid-cols-12 gap-3">
         {/* 左侧：代码查询 + 体系配置 */}
-        <div className="col-span-4 space-y-2">
+        <div className="col-span-3 space-y-2">
           {/* 代码查询 */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
             <h2 className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -218,40 +232,27 @@ export default function MultiSystemPage() {
                     <span className={`text-[10px] font-medium text-white px-1.5 py-0.5 rounded ${SYSTEM_COLORS[config.system]}`}>
                       {SYSTEM_NAMES[config.system]}
                     </span>
-                    {config.enabled && (
-                      <span className="text-[10px] text-slate-500 ml-auto">
-                        {config.auditType === 'initial' ? '初次' : config.auditType === 'surveillance' ? '监督' : '再认证'}
-                      </span>
-                    )}
                   </div>
                   
                   {config.enabled && (
                     <>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        <div>
-                          <label className="text-[9px] text-slate-500 block mb-0.5">审核类型</label>
-                          <select value={config.auditType} onChange={e => updateSystem(index, { auditType: e.target.value as AuditType })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]">
-                            <option value="initial">初次</option>
-                            <option value="surveillance">监督</option>
-                            <option value="recertification">再认证</option>
-                          </select>
-                        </div>
+                      <div className="grid grid-cols-2 gap-1.5">
                         {config.system !== 'En' && (
                         <div>
-                          <label className="text-[9px] text-slate-500 block mb-0.5">风险</label>
+                          <label className="text-[9px] text-slate-500 block mb-0.5">风险等级</label>
                           <select value={config.riskLevel} onChange={e => updateSystem(index, { riskLevel: e.target.value })} className={`w-full px-1.5 py-1 border rounded text-[10px] font-medium ${
                             config.riskLevel === '一级' ? 'border-red-300 bg-red-50 text-red-700' :
                             config.riskLevel === '二级' ? 'border-orange-300 bg-orange-50 text-orange-700' :
                             'border-green-300 bg-green-50 text-green-700'
                           }`}>
-                            <option value="一级">一级</option>
-                            <option value="二级">二级</option>
-                            <option value="三级">三级</option>
+                            <option value="一级">一级(高)</option>
+                            <option value="二级">二级(中)</option>
+                            <option value="三级">三级(低)</option>
                           </select>
                         </div>
                         )}
                         <div>
-                          <label className="text-[9px] text-slate-500 block mb-0.5">人数</label>
+                          <label className="text-[9px] text-slate-500 block mb-0.5">有效人数</label>
                           <input type="number" value={config.effectiveCount} onChange={e => updateSystem(index, { effectiveCount: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                         </div>
                       </div>
@@ -259,7 +260,6 @@ export default function MultiSystemPage() {
                       {/* 能源体系特有输入 */}
                       {config.system === 'En' && (
                         <div className="mt-2 pt-2 border-t border-slate-200 space-y-1.5">
-                          {/* 能耗单位选择 */}
                           <div className="flex items-center gap-1.5">
                             <label className="text-[8px] text-slate-500">单位:</label>
                             <select 
@@ -273,7 +273,7 @@ export default function MultiSystemPage() {
                           </div>
                           <div className="grid grid-cols-3 gap-1.5">
                             <div>
-                              <label className="text-[9px] text-slate-500 block mb-0.5">综合能耗({config.energyUnit === 'TJ' ? 'TJ' : '万tce'})</label>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">综合能耗</label>
                               <input type="number" value={config.annualConsumption} onChange={e => updateSystem(index, { annualConsumption: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                             </div>
                             <div>
@@ -281,13 +281,13 @@ export default function MultiSystemPage() {
                               <input type="number" value={config.energyTypes} onChange={e => updateSystem(index, { energyTypes: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                             </div>
                             <div>
-                              <label className="text-[9px] text-slate-500 block mb-0.5">主要能源使用</label>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">主要用途</label>
                               <input type="number" value={config.mainUses} onChange={e => updateSystem(index, { mainUses: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <input type="checkbox" id={`rb-${index}`} checked={config.includeRB} onChange={e => updateSystem(index, { includeRB: e.target.checked })} className="w-3 h-3 rounded" />
-                            <label htmlFor={`rb-${index}`} className="text-[9px] text-slate-600">含RB要求（初+1/监+0.5/再+1天）</label>
+                            <label htmlFor={`rb-${index}`} className="text-[9px] text-slate-600">含RB要求</label>
                           </div>
                         </div>
                       )}
@@ -300,14 +300,14 @@ export default function MultiSystemPage() {
         </div>
 
         {/* 中间：调整因子 */}
-        <div className="col-span-4 bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
+        <div className="col-span-3 bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
           <h2 className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
             <span className="w-4 h-4 bg-indigo-500 text-white rounded text-[10px] flex items-center justify-center">3</span>
             调整因子
             <span className="text-[9px] text-slate-400 ml-auto">减少上限30%</span>
           </h2>
-          <div className="space-y-1.5 max-h-[500px] overflow-y-auto">
-            {enabledSystems.map((config, systemIdx) => {
+          <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            {enabledSystems.map((config) => {
               const realIndex = systems.findIndex(s => s.system === config.system);
               const systemFilter = config.system === 'En' ? 'common' : config.system;
               const applicableFactors = ADJUSTMENT_FACTORS.filter(f => f.system === systemFilter || f.system === 'common');
@@ -348,115 +348,151 @@ export default function MultiSystemPage() {
           </div>
         </div>
 
-        {/* 右侧：计算结果 */}
-        <div className="col-span-4 space-y-2">
+        {/* 右侧：计算结果 - 三种审核类型同时显示 */}
+        <div className="col-span-6 space-y-2">
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
             <h2 className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
               <span className="w-4 h-4 bg-indigo-500 text-white rounded text-[10px] flex items-center justify-center">4</span>
-              计算结果
+              计算结果（初审/监督/再认证）
             </h2>
 
             {systemResults.length === 0 ? (
               <p className="text-[10px] text-slate-400 text-center py-4">请至少启用一个体系</p>
             ) : (
               <>
-                {/* 各体系明细 */}
-                <div className="space-y-1.5 mb-2">
-                  {systemResults.map((r, i) => r && (
-                    <div key={i} className="border border-slate-200 rounded p-1.5">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className={`text-[9px] font-medium text-white px-1 py-0.5 rounded ${SYSTEM_COLORS[r.config.system]}`}>
-                          {SYSTEM_NAMES[r.config.system]}
-                        </span>
-                        <span className="text-[10px] font-semibold text-slate-700">{r.adjusted.total} 天</span>
-                      </div>
-                      {/* 能源复杂系数详情 */}
-                      {r.config.system === 'En' && r.energyComplexity && (
-                        <div className="text-[8px] text-amber-700 bg-amber-50 rounded px-1.5 py-1 mb-1 space-y-0.5">
-                          <div className="font-semibold">复杂程度: C={r.energyComplexity.value.toFixed(2)} ({r.energyComplexity.level})</div>
-                          <div className="text-[7px] text-slate-600">
-                            能耗×{r.energyComplexity.consumptionCoeff} + 种类×{r.energyComplexity.typeCoeff} + 用途×{r.energyComplexity.useCoeff}
-                          </div>
-                          {r.config.includeRB && (
-                            <div className="text-[7px] text-indigo-600">含RB要求（已+{(r.base as unknown as Record<string, number>).rbAdd || 1}天）</div>
-                          )}
-                        </div>
-                      )}
-                      <div className="text-[9px] text-slate-600 space-y-0.5">
-                        <div className="flex justify-between">
-                          <span>文审:</span>
-                          <span className="font-medium">{(r.base as any).docReview} → {r.adjusted.docReview} 天</span>
-                        </div>
-                        {r.config.auditType === 'initial' ? (
-                          <>
-                            <div className="flex justify-between">
-                              <span>一阶段:</span>
-                              <span className="font-medium">{(r.base as any).phase1} → {r.adjusted.phase1} 天</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span>二阶段:</span>
-                              <span className="font-medium">{(r.base as any).phase2} → {r.adjusted.phase2} 天</span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex justify-between">
-                            <span>现场:</span>
-                            <span className="font-medium">{(r.base as any).onsite} → {r.adjusted.onsite} 天</span>
-                          </div>
-                        )}
-                        {(r.reduction > 0 || r.increase > 0) && (
-                          <div className="text-[8px] text-slate-500 pt-0.5 border-t border-slate-100 space-y-0.5">
-                            {r.reduction > 0 && <span className="text-green-600">减少{r.reduction}% </span>}
-                            {r.increase > 0 && <span className="text-red-600">增加{r.increase}%</span>}
-                            {r.config.system === 'Q' && r.config.auditType === 'initial' && r.reduction > 0 && (
-                              <div className="text-[8px] text-green-700 bg-green-50 rounded px-1 py-0.5">
-                                现场人天减少公式: {(r.base as any).phase2} × (1 - {r.reduction}%) = {r.adjusted.phase2} 天
-                              </div>
-                            )}
-                            {r.config.system === 'Q' && r.config.auditType !== 'initial' && r.reduction > 0 && (
-                              <div className="text-[8px] text-green-700 bg-green-50 rounded px-1 py-0.5">
-                                现场人天减少公式: {(r.base as any).onsite} × (1 - {r.reduction}%) = {r.adjusted.onsite} 天
-                              </div>
-                            )}
-                            {(r.config.system === 'E' || r.config.system === 'S' || r.config.system === 'En') && r.reduction > 0 && (
-                              <div className="text-[8px] text-green-700 bg-green-50 rounded px-1 py-0.5">
-                                现场人天减少公式: {(r.base as any).onsite} × (1 - {r.reduction}%) = {r.adjusted.onsite} 天
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                {/* 汇总表格 */}
+                <div className="overflow-x-auto mb-3">
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="px-2 py-1.5 text-left font-medium text-slate-600">体系</th>
+                        <th colSpan={3} className="px-2 py-1.5 text-center font-medium text-indigo-600 border-l border-slate-200">初次认证</th>
+                        <th colSpan={2} className="px-2 py-1.5 text-center font-medium text-emerald-600 border-l border-slate-200">监督审核</th>
+                        <th colSpan={2} className="px-2 py-1.5 text-center font-medium text-amber-600 border-l border-slate-200">再认证</th>
+                      </tr>
+                      <tr className="bg-slate-50 text-[9px] text-slate-500">
+                        <th className="px-2 py-1 text-left"></th>
+                        <th className="px-1 py-1 text-center border-l border-slate-200">文审</th>
+                        <th className="px-1 py-1 text-center">现场</th>
+                        <th className="px-1 py-1 text-center font-semibold">合计</th>
+                        <th className="px-1 py-1 text-center border-l border-slate-200">现场</th>
+                        <th className="px-1 py-1 text-center font-semibold">合计</th>
+                        <th className="px-1 py-1 text-center border-l border-slate-200">现场</th>
+                        <th className="px-1 py-1 text-center font-semibold">合计</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {systemResults.map((r, i) => r && (
+                        <tr key={i} className="border-t border-slate-100 hover:bg-slate-50">
+                          <td className="px-2 py-1.5">
+                            <span className={`text-[9px] font-medium text-white px-1 py-0.5 rounded ${SYSTEM_COLORS[r.config.system]}`}>
+                              {SYSTEM_NAMES[r.config.system]}
+                            </span>
+                          </td>
+                          {/* 初次 */}
+                          <td className="px-1 py-1.5 text-center border-l border-slate-200">{r.init?.docReview}</td>
+                          <td className="px-1 py-1.5 text-center">{r.init?.phase1 && r.init?.phase2 ? `${r.init.phase1}+${r.init.phase2}` : '-'}</td>
+                          <td className="px-1 py-1.5 text-center font-semibold text-indigo-700">{r.init?.total}</td>
+                          {/* 监督 */}
+                          <td className="px-1 py-1.5 text-center border-l border-slate-200">{r.monitor?.onsite}</td>
+                          <td className="px-1 py-1.5 text-center font-semibold text-emerald-700">{r.monitor?.total}</td>
+                          {/* 再认证 */}
+                          <td className="px-1 py-1.5 text-center border-l border-slate-200">{r.recert?.onsite}</td>
+                          <td className="px-1 py-1.5 text-center font-semibold text-amber-700">{r.recert?.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
                 {/* 合并结果 */}
-                {mergedResult && systemResults.length > 1 && (
+                {mergedResults && systemResults.length > 1 && (
                   <div className="border-t border-slate-200 pt-2">
                     <div className="bg-indigo-50 rounded p-2">
-                      <div className="text-[10px] font-semibold text-slate-700 mb-1">合并结果</div>
-                      <div className="text-[9px] text-slate-600 space-y-0.5">
-                        <div className="flex justify-between">
-                          <span>文审合计:</span>
-                          <span className="font-medium text-indigo-600">{mergedResult.totalDocReview} 天</span>
+                      <div className="text-[10px] font-semibold text-slate-700 mb-1.5">合并审核人天</div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-white rounded p-1.5 text-center">
+                          <div className="text-[9px] text-slate-500">初次认证</div>
+                          <div className="text-sm font-bold text-indigo-600">{mergedResults.init.mergedTotal} 天</div>
+                          <div className="text-[8px] text-slate-400">文审{mergedResults.init.totalDocReview} + 现场{mergedResults.init.mergedOnsite}</div>
                         </div>
-                        <div className="flex justify-between">
-                          <span>现场审核:</span>
-                          <span className="font-medium text-indigo-600">{mergedResult.mergedOnsite} 天</span>
+                        <div className="bg-white rounded p-1.5 text-center">
+                          <div className="text-[9px] text-slate-500">监督审核</div>
+                          <div className="text-sm font-bold text-emerald-600">{mergedResults.monitor.mergedTotal} 天</div>
+                          <div className="text-[8px] text-slate-400">文审{mergedResults.monitor.totalDocReview} + 现场{mergedResults.monitor.mergedOnsite}</div>
                         </div>
-                        <div className="flex justify-between text-[10px] pt-1 border-t border-indigo-200">
-                          <span className="font-semibold">合并总人天:</span>
-                          <span className="font-bold text-indigo-700">{mergedResult.mergedTotal} 天</span>
+                        <div className="bg-white rounded p-1.5 text-center">
+                          <div className="text-[9px] text-slate-500">再认证</div>
+                          <div className="text-sm font-bold text-amber-600">{mergedResults.recert.mergedTotal} 天</div>
+                          <div className="text-[8px] text-slate-400">文审{mergedResults.recert.totalDocReview} + 现场{mergedResults.recert.mergedOnsite}</div>
                         </div>
-                        {systemResults.length > 1 && (
-                          <div className="text-[8px] text-slate-500 pt-0.5">
-                            合并系数: ×{mergedResult.mergeRatio.toFixed(1)} (每增加一个体系+20%)
-                          </div>
-                        )}
+                      </div>
+                      <div className="text-[8px] text-slate-500 mt-1.5 text-center">
+                        合并规则：文审累加 + 现场取最大值 × (1 + (n-1)×20%)
                       </div>
                     </div>
                   </div>
                 )}
+
+                {/* 各体系详情 */}
+                <div className="border-t border-slate-200 pt-2 mt-2">
+                  <div className="text-[10px] font-semibold text-slate-700 mb-1.5">各体系详情</div>
+                  <div className="space-y-2">
+                    {systemResults.map((r, i) => r && (
+                      <div key={i} className="border border-slate-200 rounded p-2">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className={`text-[9px] font-medium text-white px-1.5 py-0.5 rounded ${SYSTEM_COLORS[r.config.system]}`}>
+                            {SYSTEM_NAMES[r.config.system]}
+                          </span>
+                          <span className="text-[9px] text-slate-500">{r.config.effectiveCount}人 | {r.config.riskLevel}风险</span>
+                          {(r.reduction > 0 || r.increase > 0) && (
+                            <span className="text-[8px] ml-auto">
+                              {r.reduction > 0 && <span className="text-green-600">减{r.reduction}% </span>}
+                              {r.increase > 0 && <span className="text-red-600">增{r.increase}%</span>}
+                            </span>
+                          )}
+                        </div>
+                        {/* 能源复杂系数 */}
+                        {r.config.system === 'En' && r.energyComplexity && (
+                          <div className="text-[8px] text-amber-700 bg-amber-50 rounded px-1.5 py-1 mb-1.5">
+                            <span className="font-semibold">C={r.energyComplexity.value.toFixed(2)}({r.energyComplexity.level})</span>
+                            <span className="text-slate-500 ml-1">= 能耗{r.energyComplexity.consumptionCoeff}×0.25 + 种类{r.energyComplexity.typeCoeff}×0.25 + 用途{r.energyComplexity.useCoeff}×0.5</span>
+                            {r.config.includeRB && <span className="text-indigo-600 ml-1">| 含RB: 初+1/监+0.5/再+1天</span>}
+                          </div>
+                        )}
+                        {/* 三栏显示 */}
+                        <div className="grid grid-cols-3 gap-1.5 text-[9px]">
+                          <div className="bg-indigo-50 rounded p-1.5">
+                            <div className="font-medium text-indigo-700 mb-0.5">初次认证</div>
+                            <div className="text-slate-600 space-y-0.5">
+                              <div>文审: {r.init?.docReview}天</div>
+                              {r.init?.phase1 !== undefined && <div>一阶段: {r.init?.phase1}天</div>}
+                              {r.init?.phase2 !== undefined && <div>二阶段: {r.init?.phase2}天</div>}
+                              {r.init?.onsite !== undefined && <div>现场: {r.init?.onsite}天</div>}
+                              <div className="font-semibold pt-0.5 border-t border-indigo-200">合计: {r.init?.total}天</div>
+                            </div>
+                          </div>
+                          <div className="bg-emerald-50 rounded p-1.5">
+                            <div className="font-medium text-emerald-700 mb-0.5">监督审核</div>
+                            <div className="text-slate-600 space-y-0.5">
+                              <div>文审: {r.monitor?.docReview}天</div>
+                              <div>现场: {r.monitor?.onsite}天</div>
+                              <div className="font-semibold pt-0.5 border-t border-emerald-200">合计: {r.monitor?.total}天</div>
+                            </div>
+                          </div>
+                          <div className="bg-amber-50 rounded p-1.5">
+                            <div className="font-medium text-amber-700 mb-0.5">再认证</div>
+                            <div className="text-slate-600 space-y-0.5">
+                              <div>文审: {r.recert?.docReview}天</div>
+                              <div>现场: {r.recert?.onsite}天</div>
+                              <div className="font-semibold pt-0.5 border-t border-amber-200">合计: {r.recert?.total}天</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </>
             )}
           </div>
