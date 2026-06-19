@@ -120,6 +120,7 @@ export default function MultiSystemPage() {
       return {
         config,
         energyComplexity,
+        applicableFactors,
         init: applyAdjustment(initResult),
         monitor: applyAdjustment(monitorResult),
         recert: applyAdjustment(recertResult),
@@ -430,6 +431,13 @@ export default function MultiSystemPage() {
                       <div className="text-[8px] text-slate-500 mt-1.5 text-center">
                         合并规则：文审累加 + 现场取最大值 × (1 + (n-1)×20%)
                       </div>
+                      {/* 合并公式详情 */}
+                      <div className="mt-1.5 bg-white rounded px-2 py-1 text-[8px] text-slate-600 font-mono">
+                        <div className="font-semibold text-slate-700 mb-0.5">合并公式：</div>
+                        <div>合并现场 = max(各体系现场) × (1 + (体系数-1) × 20%)</div>
+                        <div>= max({systemResults.map(r => r.init?.phase1 && r.init?.phase2 ? `${r.init.phase1}+${r.init.phase2}` : r.init?.onsite || 0).join(', ')}) × (1 + ({systemResults.length}-1) × 20%)</div>
+                        <div>合并总人天 = 文审累加 + 合并现场</div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -458,6 +466,43 @@ export default function MultiSystemPage() {
                             <span className="font-semibold">C={r.energyComplexity.value.toFixed(2)}({r.energyComplexity.level})</span>
                             <span className="text-slate-500 ml-1">= 能耗{r.energyComplexity.consumptionCoeff}×0.25 + 种类{r.energyComplexity.typeCoeff}×0.25 + 用途{r.energyComplexity.useCoeff}×0.5</span>
                             {r.config.includeRB && <span className="text-indigo-600 ml-1">| 含RB: 初+1/监+0.5/再+1天</span>}
+                          </div>
+                        )}
+                        {/* 调整因子描述和公式 */}
+                        {(r.reduction > 0 || r.increase > 0) && (
+                          <div className="mt-1.5 border-t border-slate-100 pt-1.5">
+                            <div className="text-[9px] font-medium text-slate-600 mb-1">调整因子明细：</div>
+                            <div className="space-y-0.5">
+                              {r.applicableFactors.filter((f) => r.config.adjustments[f.id]?.enabled).map((factor) => {
+                                const adj = r.config.adjustments[factor.id];
+                                const isReduce = factor.direction === 'reduce';
+                                return (
+                                  <div key={factor.id} className={`text-[8px] flex items-start gap-1 ${isReduce ? 'text-green-700' : 'text-red-700'}`}>
+                                    <span className={`font-medium ${isReduce ? 'bg-green-100' : 'bg-red-100'} px-1 rounded`}>
+                                      {isReduce ? '↓' : '↑'}{adj.value}%
+                                    </span>
+                                    <span className="flex-1">{factor.description}</span>
+                                    <span className="text-slate-400">({factor.rule})</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            {/* 调整公式 */}
+                            <div className="mt-1.5 bg-slate-50 rounded px-2 py-1 text-[8px] text-slate-600 font-mono">
+                              <div className="font-semibold text-slate-700 mb-0.5">调整公式：</div>
+                              <div>调整后人天 = 基准人天 × (1 - 减少比例 + 增加比例)</div>
+                              <div className="mt-0.5">
+                                = 基准人天 × (1 - {r.reduction}% + {r.increase}%)
+                              </div>
+                              <div className="mt-0.5">
+                                = 基准人天 × {(1 - r.reduction / 100 + r.increase / 100).toFixed(2)}
+                              </div>
+                              {r.reduction > 0 && (
+                                <div className="mt-0.5 text-green-600">
+                                  减少上限：30%（当前减少{r.reduction}%{r.reduction >= 30 ? '，已达上限' : ''}）
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                         {/* 三栏显示 */}
