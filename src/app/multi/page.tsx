@@ -12,6 +12,7 @@ type InternalAuditType = 'init' | 'monitor' | 'recert';
 interface SystemConfig {
   enabled: boolean;
   system: SystemType;
+  auditType: InternalAuditType;
   effectiveCount: number;
   riskLevel: string;
   annualConsumption: number;
@@ -23,10 +24,10 @@ interface SystemConfig {
 }
 
 const DEFAULT_SYSTEMS: SystemConfig[] = [
-  { enabled: true, system: 'Q', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'E', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'S', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'En', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyUnit: 'TJ', energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
+  { enabled: true, system: 'Q', auditType: 'init', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'E', auditType: 'init', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'S', auditType: 'init', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'En', auditType: 'init', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyUnit: 'TJ', energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
 ];
 
 const SYSTEM_NAMES: Record<string, string> = {
@@ -160,10 +161,42 @@ export default function MultiSystemPage() {
       return { totalDocReview: Math.round(totalDocReview * 10) / 10, mergedOnsite, mergedTotal };
     };
 
+    // 按各体系选择的审核类型合并
+    const calcMergeBySelection = () => {
+      let totalDocReview = 0;
+      let maxOnsite = 0;
+      const details: { system: string; auditType: string; result: { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number } | null }[] = [];
+
+      systemResults.forEach(r => {
+        const selectedType = r.config.auditType;
+        const result = r[selectedType];
+        if (!result) return;
+        totalDocReview += result.docReview;
+        if (selectedType === 'init') {
+          const onsite = (result.phase1 || 0) + (result.phase2 || 0);
+          maxOnsite = Math.max(maxOnsite, onsite);
+        } else {
+          maxOnsite = Math.max(maxOnsite, result.onsite || 0);
+        }
+        details.push({
+          system: SYSTEM_NAMES[r.config.system],
+          auditType: selectedType === 'init' ? '初审' : selectedType === 'monitor' ? '监督' : '再认证',
+          result
+        });
+      });
+
+      const mergeRatio = systemResults.length > 1 ? 1 + (systemResults.length - 1) * 0.2 : 1;
+      const mergedOnsite = Math.round(maxOnsite * mergeRatio * 10) / 10;
+      const mergedTotal = Math.round((totalDocReview + mergedOnsite) * 10) / 10;
+
+      return { totalDocReview: Math.round(totalDocReview * 10) / 10, mergedOnsite, mergedTotal, details, mergeRatio: Math.round(mergeRatio * 100) / 100 };
+    };
+
     return {
       init: calcMerge('init'),
       monitor: calcMerge('monitor'),
       recert: calcMerge('recert'),
+      bySelection: calcMergeBySelection(),
     };
   }, [systemResults]);
 
@@ -237,6 +270,29 @@ export default function MultiSystemPage() {
                   
                   {config.enabled && (
                     <>
+                      {/* 审核类型选择 */}
+                      <div className="mb-1.5">
+                        <label className="text-[9px] text-slate-500 block mb-0.5">审核类型</label>
+                        <div className="flex gap-1">
+                          {[
+                            { value: 'init', label: '初审' },
+                            { value: 'monitor', label: '监督' },
+                            { value: 'recert', label: '再认证' },
+                          ].map(t => (
+                            <button
+                              key={t.value}
+                              onClick={() => updateSystem(index, { auditType: t.value as InternalAuditType })}
+                              className={`flex-1 px-1.5 py-1 rounded text-[9px] font-medium transition-colors ${
+                                config.auditType === t.value
+                                  ? 'bg-indigo-500 text-white'
+                                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 gap-1.5">
                         {config.system !== 'En' && (
                         <div>
@@ -438,6 +494,30 @@ export default function MultiSystemPage() {
                         <div>= max({systemResults.map(r => r.init?.phase1 && r.init?.phase2 ? `${r.init.phase1}+${r.init.phase2}` : r.init?.onsite || 0).join(', ')}) × (1 + ({systemResults.length}-1) × 20%)</div>
                         <div>合并总人天 = 文审累加 + 合并现场</div>
                       </div>
+                      {/* 按选择审核类型合并结果 */}
+                      {mergedResults.bySelection && (
+                        <div className="mt-1.5 bg-emerald-50 rounded p-2">
+                          <div className="text-[10px] font-semibold text-slate-700 mb-1">按各体系选择的审核类型合并</div>
+                          <div className="bg-white rounded p-1.5 text-center">
+                            <div className="text-sm font-bold text-emerald-600">{mergedResults.bySelection.mergedTotal} 天</div>
+                            <div className="text-[9px] text-slate-500">文审 {mergedResults.bySelection.totalDocReview} + 现场 {mergedResults.bySelection.mergedOnsite}</div>
+                          </div>
+                          <div className="mt-1.5 bg-white rounded px-2 py-1 text-[8px] text-slate-600">
+                            <div className="font-semibold text-slate-700 mb-0.5">各体系选择：</div>
+                            {mergedResults.bySelection.details.map((d, i) => (
+                              <div key={i} className="flex justify-between">
+                                <span>{d.system}</span>
+                                <span className="text-slate-500">{d.auditType}：{d.result?.total || 0}天</span>
+                              </div>
+                            ))}
+                            <div className="mt-1 font-mono border-t border-slate-200 pt-1">
+                              <div>合并现场 = max(现场) × (1 + ({systemResults.length}-1) × 20%)</div>
+                              <div>= max({mergedResults.bySelection.details.map(d => d.result?.phase1 && d.result?.phase2 ? `${d.result.phase1}+${d.result.phase2}` : d.result?.onsite || 0).join(', ')}) × {mergedResults.bySelection.mergeRatio}</div>
+                              <div>= {mergedResults.bySelection.mergedOnsite} 天</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
