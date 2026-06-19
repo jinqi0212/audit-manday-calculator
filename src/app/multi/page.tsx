@@ -442,6 +442,62 @@ export default function MultiSystemPage() {
                   </div>
                 )}
 
+                {/* 基础人天 vs 调整后 对比表 */}
+                <div className="border-t border-slate-200 pt-2">
+                  <div className="text-[10px] font-semibold text-slate-700 mb-1.5">基础人天与调整后对比</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-[9px] border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100 border border-slate-200">
+                          <th className="px-2 py-1 text-left font-semibold" rowSpan={2}>体系</th>
+                          <th className="px-1 py-1 text-center font-semibold border-l border-slate-200" colSpan={3}>初次认证</th>
+                          <th className="px-1 py-1 text-center font-semibold border-l border-slate-200" colSpan={2}>监督审核</th>
+                          <th className="px-1 py-1 text-center font-semibold border-l border-slate-200" colSpan={2}>再认证</th>
+                        </tr>
+                        <tr className="bg-slate-50 border border-slate-200">
+                          <th className="px-1 py-0.5 text-center text-slate-500 border-l border-slate-200">基础</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">调整后</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">变化</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500 border-l border-slate-200">基础</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">调整后</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500 border-l border-slate-200">基础</th>
+                          <th className="px-1 py-0.5 text-center text-slate-500">调整后</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {systemResults.map((r, i) => r && (
+                          <tr key={i} className="border-t border-slate-100 hover:bg-slate-50">
+                            <td className="px-2 py-1.5">
+                              <span className={`text-[9px] font-medium text-white px-1 py-0.5 rounded ${SYSTEM_COLORS[r.config.system]}`}>
+                                {SYSTEM_NAMES[r.config.system]}
+                              </span>
+                            </td>
+                            {/* 初次 - 基础/调整/变化 */}
+                            <td className="px-1 py-1.5 text-center text-slate-500 border-l border-slate-200">{r.initBase?.total || '-'}</td>
+                            <td className="px-1 py-1.5 text-center font-semibold text-indigo-700">{r.init?.total || '-'}</td>
+                            <td className="px-1 py-1.5 text-center">
+                              {r.initBase?.total && r.init?.total && r.initBase.total !== r.init.total ? (
+                                <span className={`${r.init.total < r.initBase.total ? 'text-green-600' : 'text-red-600'}`}>
+                                  {r.init.total < r.initBase.total ? '↓' : '↑'}{Math.abs(Math.round((r.init.total - r.initBase.total!) * 10) / 10)}
+                                </span>
+                              ) : '-'}
+                            </td>
+                            {/* 监督 - 基础/调整 */}
+                            <td className="px-1 py-1.5 text-center text-slate-500 border-l border-slate-200">{r.monitorBase?.total || '-'}</td>
+                            <td className="px-1 py-1.5 text-center font-semibold text-emerald-700">{r.monitor?.total || '-'}</td>
+                            {/* 再认证 - 基础/调整 */}
+                            <td className="px-1 py-1.5 text-center text-slate-500 border-l border-slate-200">{r.recertBase?.total || '-'}</td>
+                            <td className="px-1 py-1.5 text-center font-semibold text-amber-700">{r.recert?.total || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[8px] text-slate-500 mt-1">
+                    基础人天 = 按风险等级/复杂程度查表所得；调整后 = 基础 × (1 - 减少% + 增加%)
+                  </div>
+                </div>
+
                 {/* 各体系详情 */}
                 <div className="border-t border-slate-200 pt-2 mt-2">
                   <div className="text-[10px] font-semibold text-slate-700 mb-1.5">各体系详情</div>
@@ -490,17 +546,19 @@ export default function MultiSystemPage() {
                             {/* 调整公式 */}
                             <div className="mt-1.5 bg-slate-50 rounded px-2 py-1 text-[8px] text-slate-600 font-mono">
                               <div className="font-semibold text-slate-700 mb-0.5">调整公式：</div>
-                              <div>调整后人天 = 基准人天 × (1 - 减少比例 + 增加比例)</div>
+                              <div>基础人天 = 按风险等级/复杂程度查表所得</div>
+                              <div>调整后 = 基础人天 × (1 - 减少比例 + 增加比例)</div>
                               <div className="mt-0.5">
-                                = 基准人天 × (1 - {r.reduction}% + {r.increase}%)
+                                初次：{r.initBase?.total || '?'} × (1 - {r.reduction}% + {r.increase}%) = {r.init?.total || '?'} 天
                               </div>
-                              <div className="mt-0.5">
-                                = 基准人天 × {(1 - r.reduction / 100 + r.increase / 100).toFixed(2)}
+                              <div>
+                                监督：{r.monitorBase?.total || '?'} × (1 - {r.reduction}% + {r.increase}%) = {r.monitor?.total || '?'} 天
                               </div>
-                              {r.reduction > 0 && (
-                                <div className="mt-0.5 text-green-600">
-                                  减少上限：30%（当前减少{r.reduction}%{r.reduction >= 30 ? '，已达上限' : ''}）
-                                </div>
+                              <div>
+                                再认证：{r.recertBase?.total || '?'} × (1 - {r.reduction}% + {r.increase}%) = {r.recert?.total || '?'} 天
+                              </div>
+                              {r.reduction >= 30 && (
+                                <div className="mt-0.5 text-amber-600">注：减少上限30%，已封顶</div>
                               )}
                             </div>
                           </div>
