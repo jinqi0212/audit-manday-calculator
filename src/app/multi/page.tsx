@@ -465,39 +465,10 @@ export default function MultiSystemPage() {
                 {/* 合并结果 */}
                 {mergedResults && systemResults.length > 1 && (
                   <div className="border-t border-slate-200 pt-2">
-                    <div className="bg-indigo-50 rounded p-2">
-                      <div className="text-[10px] font-semibold text-slate-700 mb-1.5">合并审核人天</div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="bg-white rounded p-1.5 text-center">
-                          <div className="text-[9px] text-slate-500">初次认证</div>
-                          <div className="text-sm font-bold text-indigo-600">{mergedResults.init.mergedTotal} 天</div>
-                          <div className="text-[8px] text-slate-400">文审{mergedResults.init.totalDocReview} + 现场{mergedResults.init.mergedOnsite}</div>
-                        </div>
-                        <div className="bg-white rounded p-1.5 text-center">
-                          <div className="text-[9px] text-slate-500">监督审核</div>
-                          <div className="text-sm font-bold text-emerald-600">{mergedResults.monitor.mergedTotal} 天</div>
-                          <div className="text-[8px] text-slate-400">文审{mergedResults.monitor.totalDocReview} + 现场{mergedResults.monitor.mergedOnsite}</div>
-                        </div>
-                        <div className="bg-white rounded p-1.5 text-center">
-                          <div className="text-[9px] text-slate-500">再认证</div>
-                          <div className="text-sm font-bold text-amber-600">{mergedResults.recert.mergedTotal} 天</div>
-                          <div className="text-[8px] text-slate-400">文审{mergedResults.recert.totalDocReview} + 现场{mergedResults.recert.mergedOnsite}</div>
-                        </div>
-                      </div>
-                      <div className="text-[8px] text-slate-500 mt-1.5 text-center">
-                        合并规则：文审累加 + 现场取最大值 × (1 + (n-1)×20%)
-                      </div>
-                      {/* 合并公式详情 */}
-                      <div className="mt-1.5 bg-white rounded px-2 py-1 text-[8px] text-slate-600 font-mono">
-                        <div className="font-semibold text-slate-700 mb-0.5">合并公式：</div>
-                        <div>合并现场 = max(各体系现场) × (1 + (体系数-1) × 20%)</div>
-                        <div>= max({systemResults.map(r => r.init?.phase1 && r.init?.phase2 ? `${r.init.phase1}+${r.init.phase2}` : r.init?.onsite || 0).join(', ')}) × (1 + ({systemResults.length}-1) × 20%)</div>
-                        <div>合并总人天 = 文审累加 + 合并现场</div>
-                      </div>
-                      {/* 按选择审核类型合并结果 */}
+                    <div className="bg-emerald-50 rounded p-2">
+                      <div className="text-[10px] font-semibold text-slate-700 mb-1.5">按各体系选择的审核类型合并</div>
                       {mergedResults.bySelection && (
-                        <div className="mt-1.5 bg-emerald-50 rounded p-2">
-                          <div className="text-[10px] font-semibold text-slate-700 mb-1">按各体系选择的审核类型合并</div>
+                        <>
                           <div className="bg-white rounded p-1.5 text-center">
                             <div className="text-sm font-bold text-emerald-600">{mergedResults.bySelection.mergedTotal} 天</div>
                             <div className="text-[9px] text-slate-500">文审 {mergedResults.bySelection.totalDocReview} + 现场 {mergedResults.bySelection.mergedOnsite}</div>
@@ -516,7 +487,7 @@ export default function MultiSystemPage() {
                               <div>= {mergedResults.bySelection.mergedOnsite} 天</div>
                             </div>
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   </div>
