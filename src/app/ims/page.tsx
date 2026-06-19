@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 
 // 整合程度描述（来自MSWM11-02 表1）
 const INTEGRATION_DESC = {
@@ -134,23 +135,23 @@ export default function IMSPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* 顶部标题 */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center gap-4">
-          <a href="/" className="text-slate-400 hover:text-slate-600 transition">
+      <header className="bg-white border-b border-slate-200 px-4 md:px-6 py-3 md:py-4">
+        <div className="max-w-7xl mx-auto flex items-center gap-3">
+          <Link href="/" className="text-slate-400 hover:text-slate-600 transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-          </a>
+          </Link>
           <div>
-            <h1 className="text-xl font-bold text-slate-800">IMS结合审核人天计算</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h1 className="text-lg md:text-xl font-bold text-slate-800">IMS结合审核人天计算</h1>
+            <p className="text-[10px] md:text-xs text-slate-500 mt-0.5">
               依据 MSWM11-02 第6.9条 | 审核组能力 + 整合程度矩阵 → 减少量
             </p>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-6">
+      <main className="max-w-7xl mx-auto px-3 md:px-6 py-4 md:py-6">
         {/* 三栏布局 */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* 左栏：输入 */}

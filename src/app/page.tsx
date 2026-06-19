@@ -5,14 +5,14 @@ export default function HomePage() {
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-slate-800 text-white py-4 shadow-lg">
-        <div className="max-w-7xl mx-auto px-6">
-          <h1 className="text-2xl font-bold">管理体系认证审核人天计算工具</h1>
-          <p className="text-slate-300 text-sm mt-1">MSWM11-02 / MSWM102-2 审核人天数确定指南</p>
+        <div className="max-w-7xl mx-auto px-4 md:px-6">
+          <h1 className="text-xl md:text-2xl font-bold">管理体系认证审核人天计算工具</h1>
+          <p className="text-slate-300 text-xs md:text-sm mt-1">MSWM11-02 / MSWM102-2 审核人天数确定指南</p>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-12">
+      <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-12">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
           {/* 单体系计算 */}
           <Link href="/single" className="group">

@@ -216,17 +216,17 @@ export default function MultiSystemPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="bg-slate-800 text-white px-6 py-3 flex items-center justify-between shadow-md">
-        <h1 className="text-lg font-semibold">多体系审核人天计算</h1>
-        <div className="flex items-center gap-3">
-          <Link href="/ims" className="text-sm text-slate-300 hover:text-white">IMS计算 →</Link>
-          <Link href="/" className="text-sm text-slate-300 hover:text-white">← 返回首页</Link>
+      <header className="bg-slate-800 text-white px-4 md:px-6 py-3 flex items-center justify-between shadow-md">
+        <h1 className="text-base md:text-lg font-semibold">多体系审核人天计算</h1>
+        <div className="flex items-center gap-2 md:gap-3">
+          <Link href="/ims" className="text-xs md:text-sm text-slate-300 hover:text-white">IMS</Link>
+          <Link href="/" className="text-xs md:text-sm text-slate-300 hover:text-white">← 返回</Link>
         </div>
       </header>
 
-      <div className="max-w-[1800px] mx-auto p-3 grid grid-cols-12 gap-3">
+      <div className="max-w-[1800px] mx-auto p-2 md:p-3 grid grid-cols-1 md:grid-cols-12 gap-3">
         {/* 左侧：代码查询 + 体系配置 */}
-        <div className="col-span-3 space-y-2">
+        <div className="col-span-1 md:col-span-3 space-y-2">
           {/* 代码查询 */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
             <h2 className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -356,7 +356,7 @@ export default function MultiSystemPage() {
         </div>
 
         {/* 中间：调整因子 */}
-        <div className="col-span-3 bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
+        <div className="col-span-1 md:col-span-3 bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
           <h2 className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
             <span className="w-4 h-4 bg-indigo-500 text-white rounded text-[10px] flex items-center justify-center">3</span>
             调整因子
@@ -405,7 +405,7 @@ export default function MultiSystemPage() {
         </div>
 
         {/* 右侧：计算结果 - 三种审核类型同时显示 */}
-        <div className="col-span-6 space-y-2">
+        <div className="col-span-1 md:col-span-6 space-y-2">
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-2.5">
             <h2 className="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
               <span className="w-4 h-4 bg-indigo-500 text-white rounded text-[10px] flex items-center justify-center">4</span>

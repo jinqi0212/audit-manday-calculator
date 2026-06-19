@@ -127,14 +127,14 @@ export default function SingleSystemPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <header className="bg-slate-800 text-white px-6 py-3 flex items-center justify-between shadow-md">
-        <h1 className="text-lg font-semibold">单体系审核人天计算</h1>
-        <Link href="/" className="text-sm text-slate-300 hover:text-white">← 返回首页</Link>
+      <header className="bg-slate-800 text-white px-4 md:px-6 py-3 flex items-center justify-between shadow-md">
+        <h1 className="text-base md:text-lg font-semibold">单体系审核人天计算</h1>
+        <Link href="/" className="text-sm text-slate-300 hover:text-white">← 返回</Link>
       </header>
 
-      <div className="max-w-[1400px] mx-auto p-4 grid grid-cols-12 gap-3">
+      <div className="max-w-[1400px] mx-auto p-3 md:p-4 grid grid-cols-1 md:grid-cols-12 gap-3">
         {/* 左侧：代码查询 + 配置 */}
-        <div className="col-span-4 space-y-3">
+        <div className="col-span-1 md:col-span-4 space-y-3">
           {/* 代码查询 - 紧凑版 */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
@@ -312,7 +312,7 @@ export default function SingleSystemPage() {
         </div>
 
         {/* 中间：调整因子 */}
-        <div className="col-span-4">
+        <div className="col-span-1 md:col-span-4">
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3 h-full">
             <h2 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
               <span className="w-5 h-5 bg-indigo-500 text-white rounded text-xs flex items-center justify-center">3</span>
@@ -371,7 +371,7 @@ export default function SingleSystemPage() {
         </div>
 
         {/* 右侧：计算结果 */}
-        <div className="col-span-4 space-y-3">
+        <div className="col-span-1 md:col-span-4 space-y-3">
           {/* 基础人天 */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">

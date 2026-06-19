@@ -97,8 +97,7 @@ export default function CodeSearch({ onSelect, compact = false }: CodeSearchProp
       {showDropdown && (
         <div
           ref={dropdownRef}
-          className="absolute z-50 mt-2 w-full max-h-96 bg-white border border-slate-200 rounded-lg shadow-lg overflow-y-auto"
-          style={{ minWidth: '400px' }}
+          className="absolute z-50 mt-2 w-full min-w-[280px] max-h-96 bg-white border border-slate-200 rounded-lg shadow-lg overflow-y-auto"
         >
           {results.map((code) => (
             <div
