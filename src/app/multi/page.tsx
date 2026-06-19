@@ -179,13 +179,30 @@ export default function MultiSystemPage() {
 
     const calcMergeBySelection = () => {
       let Ti = 0;
-      const details: { system: string; auditType: string; result: { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number } | null }[] = [];
+      let totalOnsite = 0;
+      let totalDocReview = 0;
+      let totalPhase1 = 0;
+      let hasPhase1 = false;
+      const details: { system: string; auditType: string; result: { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number; totalOnsite?: number } | null }[] = [];
 
       systemResults.forEach(r => {
         const selectedType = r.config.auditType;
         const result = r[selectedType];
         if (!result) return;
         Ti += result.total;
+        totalDocReview += result.docReview || 0;
+        if (selectedType === 'init') {
+          // 初审：现场 = phase1 + phase2 或 totalOnsite
+          const onsite = result.totalOnsite ?? ((result.phase1 ?? 0) + (result.phase2 ?? 0));
+          totalOnsite += onsite;
+          if (result.phase1 !== undefined) {
+            totalPhase1 += result.phase1;
+            hasPhase1 = true;
+          }
+        } else {
+          // 监督/再认证：现场 = onsite
+          totalOnsite += result.onsite || 0;
+        }
         details.push({
           system: SYSTEM_NAMES[r.config.system],
           auditType: selectedType === 'init' ? '初审' : selectedType === 'monitor' ? '监督' : '再认证',
@@ -196,8 +213,25 @@ export default function MultiSystemPage() {
       const capability = getTeamCapability;
       const reduction = getReductionPercent(integrationLevel, capability);
       const finalTotal = Math.round(Ti * (1 - reduction / 100) * 10) / 10;
+      // 按比例分配减少量到各组成部分
+      const finalOnsite = Math.round(totalOnsite * (1 - reduction / 100) * 10) / 10;
+      const finalDocReview = Math.round(totalDocReview * (1 - reduction / 100) * 10) / 10;
+      const finalPhase1 = hasPhase1 ? Math.round(totalPhase1 * (1 - reduction / 100) * 10) / 10 : undefined;
 
-      return { Ti: Math.round(Ti * 10) / 10, finalTotal, reduction, capability: Math.round(capability * 100) / 100, details };
+      return { 
+        Ti: Math.round(Ti * 10) / 10, 
+        finalTotal, 
+        reduction, 
+        capability: Math.round(capability * 100) / 100, 
+        details,
+        totalOnsite: Math.round(totalOnsite * 10) / 10,
+        totalDocReview: Math.round(totalDocReview * 10) / 10,
+        finalOnsite,
+        finalDocReview,
+        totalPhase1: hasPhase1 ? Math.round(totalPhase1 * 10) / 10 : undefined,
+        finalPhase1,
+        hasPhase1
+      };
     };
 
     return {
@@ -535,6 +569,35 @@ export default function MultiSystemPage() {
                           <div className="bg-white rounded p-1.5 text-center">
                             <div className="text-sm font-bold text-emerald-600">{mergedResults.bySelection.finalTotal} 天</div>
                             <div className="text-[9px] text-slate-500">起始时间 Ti {mergedResults.bySelection.Ti} × (100% - 减少量{mergedResults.bySelection.reduction}%)</div>
+                          </div>
+                          {/* 最终人天构成明细 */}
+                          <div className="mt-1.5 bg-white rounded px-2 py-1.5">
+                            <div className="text-[9px] font-semibold text-slate-700 mb-1">最终人天构成（打折后）</div>
+                            <div className="grid grid-cols-2 gap-2 text-[9px]">
+                              <div className="bg-indigo-50 rounded px-2 py-1">
+                                <div className="text-indigo-600 font-medium">现场人天</div>
+                                <div className="text-slate-700">
+                                  <span className="text-[8px] text-slate-500">基数 {mergedResults.bySelection.totalOnsite} → </span>
+                                  <span className="font-bold text-indigo-700">{mergedResults.bySelection.finalOnsite} 天</span>
+                                </div>
+                              </div>
+                              <div className="bg-purple-50 rounded px-2 py-1">
+                                <div className="text-purple-600 font-medium">文审人天</div>
+                                <div className="text-slate-700">
+                                  <span className="text-[8px] text-slate-500">基数 {mergedResults.bySelection.totalDocReview} → </span>
+                                  <span className="font-bold text-purple-700">{mergedResults.bySelection.finalDocReview} 天</span>
+                                </div>
+                              </div>
+                            </div>
+                            {mergedResults.bySelection.hasPhase1 && (
+                              <div className="mt-1 bg-amber-50 rounded px-2 py-1 text-[9px]">
+                                <span className="text-amber-700 font-medium">一阶段（含在现场内）：</span>
+                                <span className="text-slate-700">
+                                  <span className="text-[8px] text-slate-500">基数 {mergedResults.bySelection.totalPhase1} → </span>
+                                  <span className="font-semibold text-amber-700">{mergedResults.bySelection.finalPhase1} 天</span>
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div className="mt-1.5 bg-white rounded px-2 py-1 text-[8px] text-slate-600">
                             <div className="font-semibold text-slate-700 mb-0.5">各体系基准人天：</div>
