@@ -193,6 +193,7 @@ export default function SingleSystemPage() {
                 </select>
               </div>
 
+              {system !== 'En' && (
               <div>
                 <label className="text-[10px] text-slate-500 mb-0.5 block">风险等级</label>
                 <select 
@@ -209,6 +210,7 @@ export default function SingleSystemPage() {
                   <option value="三级">三级（低）</option>
                 </select>
               </div>
+              )}
 
               <div>
                 <label className="text-[10px] text-slate-500 mb-0.5 block">有效人数</label>

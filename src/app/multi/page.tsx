@@ -236,6 +236,7 @@ export default function MultiSystemPage() {
                             <option value="recertification">再认证</option>
                           </select>
                         </div>
+                        {config.system !== 'En' && (
                         <div>
                           <label className="text-[9px] text-slate-500 block mb-0.5">风险</label>
                           <select value={config.riskLevel} onChange={e => updateSystem(index, { riskLevel: e.target.value })} className={`w-full px-1.5 py-1 border rounded text-[10px] font-medium ${
@@ -248,6 +249,7 @@ export default function MultiSystemPage() {
                             <option value="三级">三级</option>
                           </select>
                         </div>
+                        )}
                         <div>
                           <label className="text-[9px] text-slate-500 block mb-0.5">人数</label>
                           <input type="number" value={config.effectiveCount} onChange={e => updateSystem(index, { effectiveCount: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
