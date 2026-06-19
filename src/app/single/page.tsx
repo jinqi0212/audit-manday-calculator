@@ -136,6 +136,21 @@ export default function SingleSystemPage() {
             <CodeSearch onSelect={setSelectedCode} compact={true} />
           </div>
 
+          {/* 专业描述 - 紧凑折叠 */}
+          {selectedCode && selectedCode.description && (
+            <details className="bg-white rounded-lg shadow-sm border border-slate-200">
+              <summary className="px-3 py-1.5 cursor-pointer text-[10px] text-slate-600 hover:bg-slate-50 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                专业描述
+              </summary>
+              <div className="px-3 pb-2 text-[10px] text-slate-600 leading-relaxed max-h-16 overflow-y-auto border-t border-slate-100 pt-1.5">
+                {selectedCode.description}
+              </div>
+            </details>
+          )}
+
           {/* 体系配置 - 紧凑版 */}
           <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-3">
             <h2 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
