@@ -28,6 +28,7 @@ export default function SingleSystemPage() {
   const [effectiveCount, setEffectiveCount] = useState(50);
   const [riskLevel, setRiskLevel] = useState('一级');
   const [annualConsumption, setAnnualConsumption] = useState(10);
+  const [energyUnit, setEnergyUnit] = useState<'TJ' | 'tce'>('TJ'); // 能耗单位
   const [energyTypes, setEnergyTypes] = useState(3);
   const [mainUses, setMainUses] = useState(2);
   const [includeRB, setIncludeRB] = useState(false); // 是否含RB要求
@@ -36,8 +37,8 @@ export default function SingleSystemPage() {
   // 计算能源复杂程度
   const energyComplexity = useMemo(() => {
     if (system !== 'En' || !annualConsumption) return null;
-    return calcEnergyComplexity(annualConsumption, energyTypes, mainUses);
-  }, [system, annualConsumption, energyTypes, mainUses]);
+    return calcEnergyComplexity(annualConsumption, energyTypes, mainUses, energyUnit);
+  }, [system, annualConsumption, energyTypes, mainUses, energyUnit]);
 
   // 计算基础人天
   const baseResult = useMemo(() => {
@@ -222,9 +223,21 @@ export default function SingleSystemPage() {
 
             {system === 'En' && (
               <div className="mt-2 pt-2 border-t border-slate-200">
+                {/* 能耗单位选择 */}
+                <div className="flex items-center gap-2 mb-2">
+                  <label className="text-[10px] text-slate-500">综合能耗单位:</label>
+                  <select 
+                    value={energyUnit} 
+                    onChange={e => setEnergyUnit(e.target.value as 'TJ' | 'tce')}
+                    className="px-2 py-1 border border-slate-300 rounded text-[10px]"
+                  >
+                    <option value="TJ">TJ (国际单位)</option>
+                    <option value="tce">万tce (吨标煤)</option>
+                  </select>
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="text-[10px] text-slate-500 mb-0.5 block">年能耗(TJ)</label>
+                    <label className="text-[10px] text-slate-500 mb-0.5 block">年能耗({energyUnit === 'TJ' ? 'TJ' : '万tce'})</label>
                     <input 
                       type="number" 
                       value={annualConsumption} 
@@ -242,7 +255,7 @@ export default function SingleSystemPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] text-slate-500 mb-0.5 block">主要用途</label>
+                    <label className="text-[10px] text-slate-500 mb-0.5 block">主要能源使用</label>
                     <input 
                       type="number" 
                       value={mainUses} 
@@ -260,7 +273,7 @@ export default function SingleSystemPage() {
                     onChange={e => setIncludeRB(e.target.checked)} 
                     className="w-3.5 h-3.5 rounded" 
                   />
-                  <label htmlFor="includeRB" className="text-[10px] text-slate-600">含RB要求（人天-10%）</label>
+                  <label htmlFor="includeRB" className="text-[10px] text-slate-600">含RB要求（初次+1天/监督+0.5天/再认证+1天）</label>
                 </div>
                 {/* 能源复杂程度详情 */}
                 {energyComplexity && (
@@ -402,7 +415,7 @@ export default function SingleSystemPage() {
                 {/* RB要求提示 */}
                 {system === 'En' && includeRB && (
                   <div className="mt-1.5 text-[10px] text-indigo-600 bg-indigo-50 rounded px-2 py-1">
-                    已含RB要求，人天已减少10%
+                    已含RB要求，人天已增加{(baseResult as unknown as Record<string, number>).rbAdd || (auditType === 'surveillance' ? 0.5 : 1)}天
                   </div>
                 )}
               </div>

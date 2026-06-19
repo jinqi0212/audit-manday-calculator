@@ -23,6 +23,7 @@ interface SystemConfig {
   effectiveCount: number;
   riskLevel: string;
   annualConsumption: number;
+  energyUnit: 'TJ' | 'tce';
   energyTypes: number;
   mainUses: number;
   includeRB: boolean;
@@ -30,10 +31,10 @@ interface SystemConfig {
 }
 
 const DEFAULT_SYSTEMS: SystemConfig[] = [
-  { enabled: true, system: 'Q', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'E', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'S', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
-  { enabled: false, system: 'En', auditType: 'initial', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
+  { enabled: true, system: 'Q', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'E', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'S', auditType: 'initial', effectiveCount: 100, riskLevel: '一级', annualConsumption: 0, energyUnit: 'TJ', energyTypes: 0, mainUses: 0, includeRB: false, adjustments: {} },
+  { enabled: false, system: 'En', auditType: 'initial', effectiveCount: 100, riskLevel: '中', annualConsumption: 10, energyUnit: 'TJ', energyTypes: 3, mainUses: 2, includeRB: false, adjustments: {} },
 ];
 
 const SYSTEM_NAMES: Record<string, string> = {
@@ -72,7 +73,7 @@ export default function MultiSystemPage() {
       } else if (config.system === 'En') {
         // 先计算能源复杂程度
         if (config.annualConsumption > 0) {
-          energyComplexity = calcEnergyComplexity(config.annualConsumption, config.energyTypes, config.mainUses);
+          energyComplexity = calcEnergyComplexity(config.annualConsumption, config.energyTypes, config.mainUses, config.energyUnit);
           result = calcEnergy(config.effectiveCount, energyComplexity.level, internalAuditType, config.includeRB);
         }
       }
@@ -256,9 +257,21 @@ export default function MultiSystemPage() {
                       {/* 能源体系特有输入 */}
                       {config.system === 'En' && (
                         <div className="mt-2 pt-2 border-t border-slate-200 space-y-1.5">
+                          {/* 能耗单位选择 */}
+                          <div className="flex items-center gap-1.5">
+                            <label className="text-[8px] text-slate-500">单位:</label>
+                            <select 
+                              value={config.energyUnit} 
+                              onChange={e => updateSystem(index, { energyUnit: e.target.value as 'TJ' | 'tce' })}
+                              className="px-1 py-0.5 border border-slate-300 rounded text-[9px]"
+                            >
+                              <option value="TJ">TJ</option>
+                              <option value="tce">万tce</option>
+                            </select>
+                          </div>
                           <div className="grid grid-cols-3 gap-1.5">
                             <div>
-                              <label className="text-[9px] text-slate-500 block mb-0.5">综合能耗(TJ)</label>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">综合能耗({config.energyUnit === 'TJ' ? 'TJ' : '万tce'})</label>
                               <input type="number" value={config.annualConsumption} onChange={e => updateSystem(index, { annualConsumption: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                             </div>
                             <div>
@@ -266,13 +279,13 @@ export default function MultiSystemPage() {
                               <input type="number" value={config.energyTypes} onChange={e => updateSystem(index, { energyTypes: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                             </div>
                             <div>
-                              <label className="text-[9px] text-slate-500 block mb-0.5">主要用途</label>
+                              <label className="text-[9px] text-slate-500 block mb-0.5">主要能源使用</label>
                               <input type="number" value={config.mainUses} onChange={e => updateSystem(index, { mainUses: Number(e.target.value) })} className="w-full px-1.5 py-1 border border-slate-300 rounded text-[10px]" />
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5">
                             <input type="checkbox" id={`rb-${index}`} checked={config.includeRB} onChange={e => updateSystem(index, { includeRB: e.target.checked })} className="w-3 h-3 rounded" />
-                            <label htmlFor={`rb-${index}`} className="text-[9px] text-slate-600">含RB要求（人天-10%）</label>
+                            <label htmlFor={`rb-${index}`} className="text-[9px] text-slate-600">含RB要求（初+1/监+0.5/再+1天）</label>
                           </div>
                         </div>
                       )}
@@ -363,7 +376,7 @@ export default function MultiSystemPage() {
                             能耗×{r.energyComplexity.consumptionCoeff} + 种类×{r.energyComplexity.typeCoeff} + 用途×{r.energyComplexity.useCoeff}
                           </div>
                           {r.config.includeRB && (
-                            <div className="text-[7px] text-indigo-600">含RB要求（已-10%）</div>
+                            <div className="text-[7px] text-indigo-600">含RB要求（已+{(r.base as unknown as Record<string, number>).rbAdd || 1}天）</div>
                           )}
                         </div>
                       )}

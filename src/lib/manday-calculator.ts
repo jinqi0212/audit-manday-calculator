@@ -86,10 +86,12 @@ export function calcES(empCount: number, riskLevel: string, auditType: 'init' | 
 }
 
 // 能源管理体系复杂程度计算
+// 单位: TJ 或 万tce (1万tce ≈ 29.3 TJ)
 export function calcEnergyComplexity(
-  energyConsumption: number,
-  energyTypes: number,
-  mainEnergyUses: number
+  energyConsumption: number, // 年度综合能耗
+  energyTypes: number, // 能源种类数量
+  mainEnergyUses: number, // 主要能源使用数量
+  unit: 'TJ' | 'tce' = 'TJ' // 单位类型
 ): { 
   value: number; 
   level: string;
@@ -97,24 +99,41 @@ export function calcEnergyComplexity(
   typeCoeff: number;
   useCoeff: number;
 } {
+  // 年度综合能耗系数 (表2)
+  // TJ: ≤20=1.0, >20且≤200=1.2, >200且≤2000=1.4, >2000=1.6
+  // 万tce: ≤0.068=1.0, >0.068且≤0.68=1.2, >0.68且≤6.8=1.4, >6.8=1.6
   let consumptionCoeff = 1.0;
-  if (energyConsumption > 2000) consumptionCoeff = 1.6;
-  else if (energyConsumption > 200) consumptionCoeff = 1.4;
-  else if (energyConsumption > 20) consumptionCoeff = 1.2;
+  if (unit === 'TJ') {
+    if (energyConsumption > 2000) consumptionCoeff = 1.6;
+    else if (energyConsumption > 200) consumptionCoeff = 1.4;
+    else if (energyConsumption > 20) consumptionCoeff = 1.2;
+  } else {
+    if (energyConsumption > 6.8) consumptionCoeff = 1.6;
+    else if (energyConsumption > 0.68) consumptionCoeff = 1.4;
+    else if (energyConsumption > 0.068) consumptionCoeff = 1.2;
+  }
 
+  // 能源种类数量系数 (表2)
+  // 1-2种=1.0, 3种=1.2, ≥4种=1.4
   let typeCoeff = 1.0;
-  if (energyTypes > 10) typeCoeff = 1.6;
-  else if (energyTypes > 5) typeCoeff = 1.4;
-  else if (energyTypes > 3) typeCoeff = 1.2;
+  if (energyTypes >= 4) typeCoeff = 1.4;
+  else if (energyTypes === 3) typeCoeff = 1.2;
 
+  // 主要能源使用数量系数 (表2)
+  // 1-3个=1.0, 4-6个=1.2, 7-10个=1.3, 11-15个=1.4, ≥16个=1.6
   let useCoeff = 1.0;
-  if (mainEnergyUses > 20) useCoeff = 1.6;
-  else if (mainEnergyUses > 10) useCoeff = 1.4;
-  else if (mainEnergyUses > 5) useCoeff = 1.2;
+  if (mainEnergyUses >= 16) useCoeff = 1.6;
+  else if (mainEnergyUses >= 11) useCoeff = 1.4;
+  else if (mainEnergyUses >= 7) useCoeff = 1.3;
+  else if (mainEnergyUses >= 4) useCoeff = 1.2;
 
-  const value = consumptionCoeff * 0.5 + typeCoeff * 0.3 + useCoeff * 0.2;
+  // 复杂程度值 C = (FEC × 0.25) + (FET × 0.25) + (FSEU × 0.5)
+  const value = consumptionCoeff * 0.25 + typeCoeff * 0.25 + useCoeff * 0.5;
+  
+  // 复杂程度等级 (表3)
+  // C > 1.35 = 高, 1.15~1.35 = 中, < 1.15 = 低
   let level = '低';
-  if (value >= 1.35) level = '高';
+  if (value > 1.35) level = '高';
   else if (value >= 1.15) level = '中';
 
   return { 
@@ -127,6 +146,7 @@ export function calcEnergyComplexity(
 }
 
 // 能源管理体系人天计算
+// RB要求: 初次+1天, 监督+0.5天, 再认证+1天 (增加人天)
 export function calcEnergy(
   empCount: number, 
   complexityLevel: string, 
@@ -145,9 +165,9 @@ export function calcEnergy(
     if (!row) row = ENERGY_TABLE4[0];
     if (!row) return null;
     const total = complexityLevel === '高' ? row.high : complexityLevel === '中' ? row.mid : row.low;
-    // RB要求下，人天减少10%
-    const adjustedTotal = hasRB ? Math.round(total * 0.9 * 10) / 10 : total;
-    return { total: adjustedTotal, level: complexityLevel, hasRB };
+    // RB要求下，初次认证增加1个人日
+    const adjustedTotal = hasRB ? total + 1 : total;
+    return { total: adjustedTotal, level: complexityLevel, hasRB, rbAdd: hasRB ? 1 : 0 };
   } else {
     // 手动查找能源表5
     let row: typeof ENERGY_TABLE5[number] | null = null;
@@ -162,9 +182,10 @@ export function calcEnergy(
     const suffix = complexityLevel === '高' ? 'high' : complexityLevel === '中' ? 'mid' : 'low';
     const key = (auditType === 'monitor' ? `mon_${suffix}` : `recert_${suffix}`) as keyof typeof row;
     const total = (row[key] as number) || 0;
-    // RB要求下，人天减少10%
-    const adjustedTotal = hasRB ? Math.round(total * 0.9 * 10) / 10 : total;
-    return { total: adjustedTotal, level: complexityLevel, hasRB };
+    // RB要求下，监督+0.5天，再认证+1天
+    const rbAdd = hasRB ? (auditType === 'monitor' ? 0.5 : 1) : 0;
+    const adjustedTotal = total + rbAdd;
+    return { total: adjustedTotal, level: complexityLevel, hasRB, rbAdd };
   }
 }
 
