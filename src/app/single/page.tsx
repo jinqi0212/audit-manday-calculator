@@ -133,47 +133,7 @@ export default function SingleSystemPage() {
               <span className="w-5 h-5 bg-indigo-500 text-white rounded text-xs flex items-center justify-center">1</span>
               专业代码查询
             </h2>
-            <CodeSearch onSelect={setSelectedCode} />
-            
-            {/* 代码信息和风险等级 - 紧凑显示 */}
-            {selectedCode && (
-              <div className="mt-2 p-2 bg-gradient-to-r from-indigo-50 to-blue-50 rounded border border-indigo-100">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="font-mono text-sm font-bold text-indigo-600 bg-white px-2 py-0.5 rounded border border-indigo-200">{selectedCode.code}</span>
-                  <span className="text-xs text-slate-600 truncate flex-1">{selectedCode.name}</span>
-                </div>
-                {/* 风险等级 - 突出显示 */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  <div className="text-center">
-                    <div className="text-[10px] text-slate-500 mb-0.5">QMS</div>
-                    <div className={`text-xs font-bold py-1 rounded ${selectedCode.q_risk ? getRiskBadge(selectedCode.q_risk) : 'bg-slate-200 text-slate-400'}`}>
-                      {selectedCode.q_risk || '-'}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-[10px] text-slate-500 mb-0.5">EMS</div>
-                    <div className={`text-xs font-bold py-1 rounded ${selectedCode.e_risk ? getRiskBadge(selectedCode.e_risk) : 'bg-slate-200 text-slate-400'}`}>
-                      {selectedCode.e_risk || '-'}
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-[10px] text-slate-500 mb-0.5">OHSMS</div>
-                    <div className={`text-xs font-bold py-1 rounded ${selectedCode.s_risk ? getRiskBadge(selectedCode.s_risk) : 'bg-slate-200 text-slate-400'}`}>
-                      {selectedCode.s_risk || '-'}
-                    </div>
-                  </div>
-                </div>
-                {/* 专业描述 - 小框可折叠 */}
-                {selectedCode.description && (
-                  <details className="mt-2">
-                    <summary className="text-[10px] text-slate-500 cursor-pointer hover:text-indigo-600">查看专业描述</summary>
-                    <div className="mt-1 p-2 bg-white rounded border border-slate-200 text-[10px] text-slate-600 max-h-20 overflow-y-auto leading-relaxed">
-                      {selectedCode.description}
-                    </div>
-                  </details>
-                )}
-              </div>
-            )}
+            <CodeSearch onSelect={setSelectedCode} compact={true} />
           </div>
 
           {/* 体系配置 - 紧凑版 */}
