@@ -134,50 +134,52 @@ export default function MultiSystemPage() {
     }).filter(r => r.init !== null);
   }, [enabledSystems]);
 
-  // 合并计算（三种审核类型）
+  // IMS合并计算参数
+  const [integrationLevel, setIntegrationLevel] = useState(80); // 整合程度%
+  const [auditorCounts, setAuditorCounts] = useState<number[]>([0, 0, 1, 0]); // [一体系, 二体系, 三体系, 四体系]人数
+
+  // 5x5矩阵（MSWM11-02 图1）
+  const getReductionPercent = (integration: number, capability: number): number => {
+    const intIdx = Math.min(Math.floor(integration / 20), 4);
+    const capIdx = Math.min(Math.floor(capability / 20), 4);
+    const MATRIX = [
+      [0, 0, 0, 0, 0],
+      [0, 5, 5, 5, 5],
+      [0, 5, 10, 10, 10],
+      [0, 5, 10, 15, 15],
+      [0, 5, 10, 15, 20],
+    ];
+    return MATRIX[intIdx][capIdx];
+  };
+
+  // 审核组能力计算
+  const getTeamCapability = useMemo(() => {
+    const enabledCount = systemResults.length;
+    if (enabledCount < 2) return 0;
+    const totalAuditors = auditorCounts.reduce((a, b) => a + b, 0);
+    if (totalAuditors === 0) return 0;
+    let numerator = 0;
+    auditorCounts.forEach((count, idx) => {
+      const qualifications = idx + 1;
+      numerator += (qualifications - 1) * count;
+    });
+    const denominator = totalAuditors * (enabledCount - 1);
+    return denominator > 0 ? (numerator / denominator) * 100 : 0;
+  }, [auditorCounts, systemResults.length]);
+
+  // 合并计算（MSWM11-02 6.9.2）
   const mergedResults = useMemo(() => {
     if (systemResults.length === 0) return null;
 
-    const calcMerge = (type: 'init' | 'monitor' | 'recert') => {
-      let totalDocReview = 0;
-      let maxOnsite = 0;
-
-      systemResults.forEach(r => {
-        const result = r[type];
-        if (!result) return;
-        totalDocReview += result.docReview;
-        if (type === 'init') {
-          const onsite = (result.phase1 || 0) + (result.phase2 || 0);
-          maxOnsite = Math.max(maxOnsite, onsite);
-        } else {
-          maxOnsite = Math.max(maxOnsite, result.onsite || 0);
-        }
-      });
-
-      const mergeRatio = systemResults.length > 1 ? 1 + (systemResults.length - 1) * 0.2 : 1;
-      const mergedOnsite = Math.round(maxOnsite * mergeRatio * 10) / 10;
-      const mergedTotal = Math.round((totalDocReview + mergedOnsite) * 10) / 10;
-
-      return { totalDocReview: Math.round(totalDocReview * 10) / 10, mergedOnsite, mergedTotal };
-    };
-
-    // 按各体系选择的审核类型合并
     const calcMergeBySelection = () => {
-      let totalDocReview = 0;
-      let maxOnsite = 0;
+      let Ti = 0;
       const details: { system: string; auditType: string; result: { total: number; docReview: number; phase1?: number; phase2?: number; onsite?: number } | null }[] = [];
 
       systemResults.forEach(r => {
         const selectedType = r.config.auditType;
         const result = r[selectedType];
         if (!result) return;
-        totalDocReview += result.docReview;
-        if (selectedType === 'init') {
-          const onsite = (result.phase1 || 0) + (result.phase2 || 0);
-          maxOnsite = Math.max(maxOnsite, onsite);
-        } else {
-          maxOnsite = Math.max(maxOnsite, result.onsite || 0);
-        }
+        Ti += result.total;
         details.push({
           system: SYSTEM_NAMES[r.config.system],
           auditType: selectedType === 'init' ? '初审' : selectedType === 'monitor' ? '监督' : '再认证',
@@ -185,20 +187,17 @@ export default function MultiSystemPage() {
         });
       });
 
-      const mergeRatio = systemResults.length > 1 ? 1 + (systemResults.length - 1) * 0.2 : 1;
-      const mergedOnsite = Math.round(maxOnsite * mergeRatio * 10) / 10;
-      const mergedTotal = Math.round((totalDocReview + mergedOnsite) * 10) / 10;
+      const capability = getTeamCapability;
+      const reduction = getReductionPercent(integrationLevel, capability);
+      const finalTotal = Math.round(Ti * (1 - reduction / 100) * 10) / 10;
 
-      return { totalDocReview: Math.round(totalDocReview * 10) / 10, mergedOnsite, mergedTotal, details, mergeRatio: Math.round(mergeRatio * 100) / 100 };
+      return { Ti: Math.round(Ti * 10) / 10, finalTotal, reduction, capability: Math.round(capability * 100) / 100, details };
     };
 
     return {
-      init: calcMerge('init'),
-      monitor: calcMerge('monitor'),
-      recert: calcMerge('recert'),
       bySelection: calcMergeBySelection(),
     };
-  }, [systemResults]);
+  }, [systemResults, integrationLevel, getTeamCapability]);
 
   const toggleAdjustment = (systemIndex: number, factorId: string) => {
     const config = systems[systemIndex];
@@ -462,19 +461,68 @@ export default function MultiSystemPage() {
                   </table>
                 </div>
 
+                {/* IMS合并计算参数 */}
+                {systemResults.length > 1 && (
+                  <div className="border-t border-slate-200 pt-2">
+                    <div className="text-[10px] font-semibold text-slate-700 mb-1.5">IMS合并计算参数（MSWM11-02 6.9.2）</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white rounded px-2 py-1.5">
+                        <div className="text-[9px] text-slate-500 mb-0.5">管理体系整合程度</div>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="range"
+                            min="0"
+                            max="100"
+                            step="5"
+                            value={integrationLevel}
+                            onChange={e => setIntegrationLevel(Number(e.target.value))}
+                            className="flex-1 h-1 accent-indigo-600"
+                          />
+                          <span className="text-xs font-bold text-indigo-600 w-10 text-right">{integrationLevel}%</span>
+                        </div>
+                        <div className="text-[8px] text-slate-400 mt-0.5">
+                          {integrationLevel < 40 ? '低：分别建立体系、各自管理评审' : integrationLevel < 80 ? '中：部分整合、统一协调员' : '高：一套整合文件、一体化方法'}
+                        </div>
+                      </div>
+                      <div className="bg-white rounded px-2 py-1.5">
+                        <div className="text-[9px] text-slate-500 mb-0.5">审核员资格分布（人数）</div>
+                        <div className="grid grid-cols-2 gap-1">
+                          {['一体系', '二体系', '三体系', '四体系'].map((label, idx) => (
+                            <div key={idx} className="flex items-center gap-0.5">
+                              <span className="text-[8px] text-slate-500 w-8">{label}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="20"
+                                value={auditorCounts[idx]}
+                                onChange={e => {
+                                  const newCounts = [...auditorCounts];
+                                  newCounts[idx] = Math.max(0, Number(e.target.value) || 0);
+                                  setAuditorCounts(newCounts);
+                                }}
+                                className="w-10 px-1 py-0.5 text-[10px] border border-slate-200 rounded text-center bg-slate-50 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* 合并结果 */}
                 {mergedResults && systemResults.length > 1 && (
                   <div className="border-t border-slate-200 pt-2">
                     <div className="bg-emerald-50 rounded p-2">
-                      <div className="text-[10px] font-semibold text-slate-700 mb-1.5">按各体系选择的审核类型合并</div>
+                      <div className="text-[10px] font-semibold text-slate-700 mb-1.5">结合审核人天计算（MSWM11-02 6.9.2）</div>
                       {mergedResults.bySelection && (
                         <>
                           <div className="bg-white rounded p-1.5 text-center">
-                            <div className="text-sm font-bold text-emerald-600">{mergedResults.bySelection.mergedTotal} 天</div>
-                            <div className="text-[9px] text-slate-500">文审 {mergedResults.bySelection.totalDocReview} + 现场 {mergedResults.bySelection.mergedOnsite}</div>
+                            <div className="text-sm font-bold text-emerald-600">{mergedResults.bySelection.finalTotal} 天</div>
+                            <div className="text-[9px] text-slate-500">起始时间 Ti {mergedResults.bySelection.Ti} × (100% - 减少量{mergedResults.bySelection.reduction}%)</div>
                           </div>
                           <div className="mt-1.5 bg-white rounded px-2 py-1 text-[8px] text-slate-600">
-                            <div className="font-semibold text-slate-700 mb-0.5">各体系选择：</div>
+                            <div className="font-semibold text-slate-700 mb-0.5">各体系基准人天：</div>
                             {mergedResults.bySelection.details.map((d, i) => (
                               <div key={i} className="flex justify-between">
                                 <span>{d.system}</span>
@@ -482,10 +530,47 @@ export default function MultiSystemPage() {
                               </div>
                             ))}
                             <div className="mt-1 font-mono border-t border-slate-200 pt-1">
-                              <div>合并现场 = max(现场) × (1 + ({systemResults.length}-1) × 20%)</div>
-                              <div>= max({mergedResults.bySelection.details.map(d => d.result?.phase1 && d.result?.phase2 ? `${d.result.phase1}+${d.result.phase2}` : d.result?.onsite || 0).join(', ')}) × {mergedResults.bySelection.mergeRatio}</div>
-                              <div>= {mergedResults.bySelection.mergedOnsite} 天</div>
+                              <div>Ti = {mergedResults.bySelection.details.map(d => d.result?.total || 0).join(' + ')} = {mergedResults.bySelection.Ti} 天</div>
+                              <div>审核组能力 = {mergedResults.bySelection.capability}%</div>
+                              <div>整合程度 = {integrationLevel}%，查矩阵 → 减少量 = {mergedResults.bySelection.reduction}%</div>
+                              <div>最终 = {mergedResults.bySelection.Ti} × (100% - {mergedResults.bySelection.reduction}%) = {mergedResults.bySelection.finalTotal} 天</div>
                             </div>
+                          </div>
+                          {/* 矩阵表格 */}
+                          <div className="mt-1.5 bg-white rounded px-2 py-1">
+                            <div className="text-[8px] font-semibold text-slate-700 mb-1">图1 减少量矩阵</div>
+                            <table className="w-full text-[7px] border-collapse">
+                              <thead>
+                                <tr>
+                                  <th className="border border-slate-200 px-1 py-0.5 bg-slate-100 text-slate-600">整合\能力</th>
+                                  {[0, 20, 40, 60, 80].map(c => (
+                                    <th key={c} className="border border-slate-200 px-1 py-0.5 bg-slate-100 text-slate-600">{c}-{c + 20}%</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {([[0, '0-20%'], [20, '20-40%'], [40, '40-60%'], [60, '60-80%'], [80, '80-100%']] as [number, string][]).map(([rowVal, rowLabel], ri) => {
+                                  const intIdx = ri;
+                                  const capIdx = Math.min(Math.floor(mergedResults.bySelection!.capability / 20), 4);
+                                  const intHighlight = integrationLevel >= rowVal && integrationLevel < rowVal + 20;
+                                  return (
+                                    <tr key={ri}>
+                                      <td className={`border border-slate-200 px-1 py-0.5 text-center ${intHighlight ? 'bg-indigo-100 font-semibold text-indigo-700' : 'bg-slate-50 text-slate-600'}`}>{rowLabel}</td>
+                                      {[0, 5, 10, 15, 20].map((val, ci) => {
+                                        const MATRIX = [[0, 0, 0, 0, 0], [0, 5, 5, 5, 5], [0, 5, 10, 10, 10], [0, 5, 10, 15, 15], [0, 5, 10, 15, 20]];
+                                        const cellVal = MATRIX[intIdx][ci];
+                                        const isHighlight = intHighlight && capIdx === ci;
+                                        return (
+                                          <td key={ci} className={`border border-slate-200 px-1 py-0.5 text-center ${isHighlight ? 'bg-indigo-500 text-white font-bold' : cellVal > 0 ? 'bg-emerald-50 text-emerald-700' : 'text-slate-400'}`}>
+                                            {cellVal}%
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         </>
                       )}
