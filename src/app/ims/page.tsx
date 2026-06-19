@@ -1,79 +1,9 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import Link from 'next/link';
 
-// 按体系资格数量分组的审核员数据
-interface AuditorGroup {
-  systemsCount: number; // 具备的体系资格数量
-  count: number;        // 该级别的审核员数量
-}
-
-// 审核组能力程度计算
-// 公式: [(Y-1)×N_Y + (Y-2-1)×N_{Y-1} + ... + (1-1)×N_1] / [Z × (Y-1)] × 100%
-// Y = IMS涵盖的体系标准数量
-// N_k = 具备k个体系资格的审核员数量
-// Z = 审核员总数 = ΣN_k
-function calcAuditTeamCapability(auditorGroups: AuditorGroup[], totalSystems: number): {
-  numerator: number;
-  denominator: number;
-  percent: number;
-  totalAuditors: number;
-} {
-  if (totalSystems <= 1) return { numerator: 0, denominator: 0, percent: 0, totalAuditors: 0 };
-  
-  const totalAuditors = auditorGroups.reduce((sum, g) => sum + g.count, 0);
-  if (totalAuditors === 0) return { numerator: 0, denominator: 0, percent: 0, totalAuditors: 0 };
-  
-  // 计算分子：每个资格级别的 (资格数-1) × 该级别人数
-  let numerator = 0;
-  auditorGroups.forEach(g => {
-    if (g.systemsCount > 0) {
-      numerator += (g.systemsCount - 1) * g.count;
-    }
-  });
-  
-  // 计算分母：审核员总数 × (体系数-1)
-  const denominator = totalAuditors * (totalSystems - 1);
-  
-  if (denominator === 0) return { numerator, denominator, percent: 0, totalAuditors };
-  
-  const percent = (numerator / denominator) * 100;
-  
-  return { numerator, denominator, percent, totalAuditors };
-}
-
-// 整合程度等级
-type IntegrationLevel = 'low' | 'medium' | 'high';
-
-// 根据矩阵表获取减少量
-// 图1矩阵：纵轴=整合程度，横轴=审核组能力
-// 根据MSWM11-02文件中的图1矩阵
-function getReductionPercent(integrationLevel: IntegrationLevel, capabilityPercent: number): number {
-  // 矩阵定义（从MSWM11-02图1提取，经Excel验证）
-  // 审核组能力程度分为4个区间：0-40%, 40-60%, 60-80%, 80-100%
-  // 验证：高整合 + 76.2%能力 → 10%减少量
-  const matrix: Record<IntegrationLevel, [number, number, number, number]> = {
-    // [0-40%, 40-60%, 60-80%, 80-100%]
-    'low':    [0,  5,  8, 10],
-    'medium': [5,  8, 10, 15],
-    'high':   [8, 10, 10, 20],
-  };
-  
-  const row = matrix[integrationLevel];
-  if (capabilityPercent < 40) return row[0];
-  if (capabilityPercent < 60) return row[1];
-  if (capabilityPercent < 80) return row[2];
-  return row[3];
-}
-
-const INTEGRATION_LABELS: Record<IntegrationLevel, string> = {
-  low: '低 (0%-40%)',
-  medium: '中 (40%-80%)',
-  high: '高 (80%-100%)',
-};
-
-const INTEGRATION_DESC: Record<IntegrationLevel, string[]> = {
+// 整合程度描述（来自MSWM11-02 表1）
+const INTEGRATION_DESC = {
   low: [
     '分别建立管理体系',
     '策划机制各不相同',
@@ -86,114 +16,165 @@ const INTEGRATION_DESC: Record<IntegrationLevel, string[]> = {
     '一个管理体系协调员和不同的管理者代表',
     '管理体系文件部分整合（如手册、程序）',
     '对管理体系文件和记录协调控制',
-    '虽然策划机制不同但各管理评审一起进行',
+    '虽然策划机制不同但各管理体系的管理评审一起进行',
   ],
   high: [
-    '一套整合的文件，含适度融合的作业文件',
+    '为一套整合的文件，适宜时包括适度融合的作业文件',
     '考虑总体经营战略和计划的管理评审',
     '内部审核采用一体化的方法',
     '对方针和目标采用一体化的方法',
     '对体系过程采用一体化的方法',
-    '对改进机制采用一体化的方法',
+    '对改进机制（纠正和预防措施、测量和持续改进）采用一体化的方法',
     '一体化的管理支持和管理职责',
   ],
 };
 
+// 图1矩阵：5x5，纵轴=整合程度(0-100%按20%分档)，横轴=审核组能力(0-100%按20%分档)
+// 数据来自MSWM11-02文件图1，经Excel验证调整
+function getReductionPercent(integrationPercent: number, capabilityPercent: number): number {
+  // 5x5矩阵，行=整合程度(0-20,20-40,40-60,60-80,80-100)，列=审核组能力(0-20,20-40,40-60,60-80,80-100)
+  // 验证点：整合90%+能力76.19% → 减少量10%（来自Excel）
+  const matrix: number[][] = [
+    // [0-20%, 20-40%, 40-60%, 60-80%, 80-100%]
+    [0, 0, 0, 0, 0],         // 整合程度 0-20%
+    [0, 5, 5, 5, 5],         // 整合程度 20-40%
+    [0, 5, 10, 10, 10],      // 整合程度 40-60%
+    [0, 5, 10, 15, 15],      // 整合程度 60-80%
+    [0, 5, 10, 10, 20],      // 整合程度 80-100% (经Excel验证: 76.19%能力→10%)
+  ];
+
+  const row = Math.min(Math.floor(integrationPercent / 20), 4);
+  const col = Math.min(Math.floor(capabilityPercent / 20), 4);
+  return matrix[row][col];
+}
+
+// 获取整合程度等级标签
+function getIntegrationLabel(percent: number): { label: string; level: 'low' | 'medium' | 'high' } {
+  if (percent < 40) return { label: '低', level: 'low' };
+  if (percent < 80) return { label: '中', level: 'medium' };
+  return { label: '高', level: 'high' };
+}
+
+interface AuditorGroup {
+  systemsCount: number;
+  count: number;
+}
+
 export default function IMSPage() {
-  const [totalSystems, setTotalSystems] = useState(4);
-  // 按体系资格数量分组的审核员
+  // 体系数量
+  const [totalSystems, setTotalSystems] = useState(3);
+
+  // 审核员构成：按具备的体系资格数量分组
   const [auditorGroups, setAuditorGroups] = useState<AuditorGroup[]>([
-    { systemsCount: 4, count: 3 },
-    { systemsCount: 3, count: 3 },
+    { systemsCount: 3, count: 1 },
     { systemsCount: 2, count: 1 },
-    { systemsCount: 1, count: 0 },
+    { systemsCount: 1, count: 1 },
   ]);
-  const [integrationLevel, setIntegrationLevel] = useState<IntegrationLevel>('high');
-  const [baseAuditTime, setBaseAuditTime] = useState(21); // Ti 起始审核时间
 
-  // 计算审核组能力程度
-  const capability = useMemo(() => {
-    return calcAuditTeamCapability(auditorGroups, totalSystems);
-  }, [auditorGroups, totalSystems]);
+  // 整合程度（百分比，0-100）
+  const [integrationPercent, setIntegrationPercent] = useState(80);
 
-  // 计算减少量
-  const reductionPercent = useMemo(() => {
-    return getReductionPercent(integrationLevel, capability.percent);
-  }, [integrationLevel, capability.percent]);
+  // 起始审核时间 Ti
+  const [baseAuditTime, setBaseAuditTime] = useState(15);
 
-  // 计算最终审核时间
-  const finalAuditTime = useMemo(() => {
-    return baseAuditTime * (1 - reductionPercent / 100);
-  }, [baseAuditTime, reductionPercent]);
-
-  // 更新某个资格级别的审核员数量
+  // 更新审核员人数
   const updateAuditorCount = (systemsCount: number, count: number) => {
-    setAuditorGroups(prev => prev.map(g => 
+    setAuditorGroups(prev => prev.map(g =>
       g.systemsCount === systemsCount ? { ...g, count: Math.max(0, count) } : g
     ));
   };
 
   // 添加新的资格级别
   const addAuditorGroup = () => {
-    const existingCounts = auditorGroups.map(g => g.systemsCount);
-    let newCount = totalSystems;
-    while (existingCounts.includes(newCount) && newCount > 0) {
-      newCount--;
-    }
-    if (newCount > 0) {
-      setAuditorGroups(prev => [...prev, { systemsCount: newCount, count: 0 }].sort((a, b) => b.systemsCount - a.systemsCount));
+    const existing = new Set(auditorGroups.map(g => g.systemsCount));
+    for (let i = totalSystems; i >= 1; i--) {
+      if (!existing.has(i)) {
+        setAuditorGroups(prev => [...prev, { systemsCount: i, count: 0 }].sort((a, b) => b.systemsCount - a.systemsCount));
+        return;
+      }
     }
   };
 
-  // 删除某个资格级别
+  // 移除资格级别
   const removeAuditorGroup = (systemsCount: number) => {
     setAuditorGroups(prev => prev.filter(g => g.systemsCount !== systemsCount));
   };
 
+  // 计算审核组能力程度
+  const capability = useMemo(() => {
+    const numerator = auditorGroups.reduce((sum, g) => sum + (g.systemsCount - 1) * g.count, 0);
+    const totalAuditors = auditorGroups.reduce((sum, g) => sum + g.count, 0);
+    const denominator = totalAuditors * (totalSystems - 1);
+    const percent = denominator > 0 ? (numerator / denominator) * 100 : 0;
+    return { numerator, denominator, totalAuditors, percent };
+  }, [auditorGroups, totalSystems]);
+
+  // 查表得减少量
+  const reductionPercent = getReductionPercent(integrationPercent, capability.percent);
+
+  // 最终审核时间
+  const finalAuditTime = baseAuditTime * (1 - reductionPercent / 100);
+
+  // 整合程度等级
+  const integrationInfo = getIntegrationLabel(integrationPercent);
+
+  // 当前矩阵高亮位置
+  const currentRow = Math.min(Math.floor(integrationPercent / 20), 4);
+  const currentCol = Math.min(Math.floor(capability.percent / 20), 4);
+
+  // 矩阵数据（与getReductionPercent中的矩阵一致）
+  const matrixData: number[][] = [
+    [0, 0, 0, 0, 0],
+    [0, 5, 5, 5, 5],
+    [0, 5, 10, 10, 10],
+    [0, 5, 10, 15, 15],
+    [0, 5, 10, 10, 20],
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <header className="bg-slate-800 text-white shadow-lg">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-slate-400 hover:text-white transition">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </Link>
-            <div>
-              <h1 className="text-xl font-bold">IMS结合审核人天计算</h1>
-              <p className="text-xs text-slate-400">依据MSWM11-02审核人天数确定指南</p>
-            </div>
+      {/* 顶部标题 */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4">
+        <div className="max-w-7xl mx-auto flex items-center gap-4">
+          <a href="/" className="text-slate-400 hover:text-slate-600 transition">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </a>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800">IMS结合审核人天计算</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              依据 MSWM11-02 第6.9条 | 审核组能力 + 整合程度矩阵 → 减少量
+            </p>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* 左栏：基本配置 */}
-          <div className="space-y-4">
-            {/* IMS体系数量 */}
+      <main className="max-w-7xl mx-auto px-6 py-6">
+        {/* 三栏布局 */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* 左栏：输入 */}
+          <div className="lg:col-span-3 space-y-4">
+            {/* 体系数量 */}
             <div className="bg-white rounded-lg shadow-sm p-4">
               <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <span className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">1</span>
-                IMS涵盖的体系标准数量
+                IMS体系数量
               </h2>
-              <select
-                value={totalSystems}
-                onChange={(e) => setTotalSystems(Number(e.target.value))}
-                className="w-full px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                {[2, 3, 4, 5, 6].map(n => (
-                  <option key={n} value={n}>{n} 个体系</option>
-                ))}
-              </select>
-              <p className="text-xs text-slate-500 mt-2">
-                如：QMS+EMS+OHSMS = 3个体系
-              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={2}
+                  max={6}
+                  value={totalSystems}
+                  onChange={(e) => setTotalSystems(Math.max(2, Math.min(6, Number(e.target.value))))}
+                  className="w-20 px-3 py-2 text-sm border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <span className="text-sm text-slate-600">个体系</span>
+              </div>
             </div>
 
-            {/* 审核员配置 */}
+            {/* 审核组构成 */}
             <div className="bg-white rounded-lg shadow-sm p-4">
               <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <span className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">2</span>
@@ -274,105 +255,173 @@ export default function IMSPage() {
             </div>
           </div>
 
-          {/* 中栏：整合程度 */}
-          <div className="space-y-4">
+          {/* 中栏：整合程度 + 矩阵 */}
+          <div className="lg:col-span-5 space-y-4">
+            {/* 整合程度输入 */}
             <div className="bg-white rounded-lg shadow-sm p-4">
               <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
                 <span className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-xs">4</span>
                 管理体系整合程度
               </h2>
               
+              <div className="flex items-center gap-3 mb-3">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={integrationPercent}
+                  onChange={(e) => setIntegrationPercent(Number(e.target.value))}
+                  className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                />
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={integrationPercent}
+                    onChange={(e) => setIntegrationPercent(Math.max(0, Math.min(100, Number(e.target.value))))}
+                    className="w-16 px-2 py-1 text-sm border border-slate-200 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-600">%</span>
+                </div>
+              </div>
+
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium mb-3 ${
+                integrationInfo.level === 'high' ? 'bg-green-100 text-green-700' :
+                integrationInfo.level === 'medium' ? 'bg-amber-100 text-amber-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  integrationInfo.level === 'high' ? 'bg-green-500' :
+                  integrationInfo.level === 'medium' ? 'bg-amber-500' :
+                  'bg-red-500'
+                }`} />
+                整合程度：{integrationInfo.label}（{integrationPercent}%）
+              </div>
+
+              {/* 整合程度特征描述 */}
               <div className="space-y-2">
-                {(Object.keys(INTEGRATION_LABELS) as IntegrationLevel[]).map(level => (
-                  <label
-                    key={level}
-                    className={`flex items-start gap-3 p-3 rounded-lg border-2 cursor-pointer transition ${
-                      integrationLevel === level
-                        ? 'border-indigo-500 bg-indigo-50'
-                        : 'border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="integration"
-                      value={level}
-                      checked={integrationLevel === level}
-                      onChange={() => setIntegrationLevel(level)}
-                      className="mt-0.5"
-                    />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-slate-700">{INTEGRATION_LABELS[level]}</p>
-                      <ul className="mt-1 space-y-0.5">
-                        {INTEGRATION_DESC[level].slice(0, 3).map((desc, i) => (
-                          <li key={i} className="text-xs text-slate-500">• {desc}</li>
+                {(['low', 'medium', 'high'] as const).map(level => {
+                  const rangeMap = { low: '0%-40%', medium: '40%-80%', high: '80%-100%' };
+                  const labelMap = { low: '低', medium: '中', high: '高' };
+                  const isActive = integrationInfo.level === level;
+                  return (
+                    <div
+                      key={level}
+                      className={`p-2.5 rounded-lg border transition ${
+                        isActive ? 'border-indigo-400 bg-indigo-50' : 'border-slate-200 bg-slate-50'
+                      }`}
+                    >
+                      <p className={`text-xs font-medium mb-1 ${isActive ? 'text-indigo-700' : 'text-slate-600'}`}>
+                        整合程度{labelMap[level]}（{rangeMap[level]}）
+                      </p>
+                      <ul className="space-y-0.5">
+                        {INTEGRATION_DESC[level].slice(0, 2).map((desc, i) => (
+                          <li key={i} className={`text-xs ${isActive ? 'text-indigo-600' : 'text-slate-500'}`}>
+                            {isActive ? '✓' : '•'} {desc}
+                          </li>
                         ))}
-                        {INTEGRATION_DESC[level].length > 3 && (
-                          <li className="text-xs text-slate-400">...等{INTEGRATION_DESC[level].length}项特征</li>
+                        {INTEGRATION_DESC[level].length > 2 && (
+                          <li className={`text-xs ${isActive ? 'text-indigo-400' : 'text-slate-400'}`}>
+                            ...等{INTEGRATION_DESC[level].length}项特征
+                          </li>
                         )}
                       </ul>
                     </div>
-                  </label>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            {/* 矩阵说明 */}
+            {/* 图1矩阵 - 完整5x5 */}
             <div className="bg-white rounded-lg shadow-sm p-4">
-              <h3 className="text-xs font-bold text-slate-600 mb-2">审核时间减少量矩阵（图1）</h3>
+              <h3 className="text-xs font-bold text-slate-600 mb-3">图1：结合审核时间减少量矩阵（MSWM11-02）</h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100">
-                      <th className="px-2 py-1 text-left">整合程度</th>
-                      <th className="px-2 py-1 text-center">0-40%</th>
-                      <th className="px-2 py-1 text-center">40-60%</th>
-                      <th className="px-2 py-1 text-center">60-80%</th>
-                      <th className="px-2 py-1 text-center">80-100%</th>
+                    <tr>
+                      <th className="px-1 py-1.5 text-left text-slate-500 border border-slate-200 bg-slate-50" rowSpan={2}>
+                        整合程度 ↓ \ 能力 →
+                      </th>
+                      <th className="px-1 py-1 text-center text-slate-600 border border-slate-200 bg-slate-50" colSpan={5}>
+                        审核组结合审核能力程度（%）
+                      </th>
+                    </tr>
+                    <tr className="bg-slate-50">
+                      {['0-20', '20-40', '40-60', '60-80', '80-100'].map((label, i) => (
+                        <th key={i} className={`px-1 py-1 text-center border border-slate-200 text-xs ${
+                          i === currentCol ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-slate-600'
+                        }`}>
+                          {label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {(Object.keys(INTEGRATION_LABELS) as IntegrationLevel[]).map(level => (
-                      <tr key={level} className={integrationLevel === level ? 'bg-indigo-50 font-semibold' : ''}>
-                        <td className="px-2 py-1 font-medium">{INTEGRATION_LABELS[level].split(' ')[0]}</td>
-                        {[10, 50, 70, 90].map((sample, i) => {
-                          const val = getReductionPercent(level, sample);
-                          const isCurrentCell = integrationLevel === level && 
-                            ((i === 0 && capability.percent < 40) ||
-                             (i === 1 && capability.percent >= 40 && capability.percent < 60) ||
-                             (i === 2 && capability.percent >= 60 && capability.percent < 80) ||
-                             (i === 3 && capability.percent >= 80));
-                          return (
-                            <td key={i} className={`px-2 py-1 text-center ${isCurrentCell ? 'bg-indigo-200 rounded' : ''}`}>
-                              {val}%
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
+                    {[4, 3, 2, 1, 0].map(rowIdx => {
+                      const rangeLabels = ['0-20', '20-40', '40-60', '60-80', '80-100'];
+                      const isCurrentRow = rowIdx === currentRow;
+                      return (
+                        <tr key={rowIdx}>
+                          <td className={`px-1 py-1.5 font-medium border border-slate-200 text-xs whitespace-nowrap ${
+                            isCurrentRow ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-slate-600 bg-slate-50'
+                          }`}>
+                            {rangeLabels[rowIdx]}%
+                          </td>
+                          {matrixData[rowIdx].map((val, colIdx) => {
+                            const isCurrentCell = isCurrentRow && colIdx === currentCol;
+                            return (
+                              <td
+                                key={colIdx}
+                                className={`px-1 py-1.5 text-center border border-slate-200 font-mono ${
+                                  isCurrentCell
+                                    ? 'bg-indigo-500 text-white font-bold text-sm'
+                                    : val === 0
+                                    ? 'text-slate-400'
+                                    : val >= 15
+                                    ? 'text-red-600 font-semibold'
+                                    : val >= 10
+                                    ? 'text-amber-600 font-medium'
+                                    : 'text-slate-600'
+                                }`}
+                              >
+                                {val}%
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-              <p className="text-xs text-slate-500 mt-2">横轴：审核组能力程度 | 高亮单元格为当前查表位置</p>
+              <p className="text-xs text-slate-500 mt-2">
+                纵轴：整合程度（%）| 横轴：审核组能力程度（%）| 
+                <span className="text-indigo-600 font-medium"> 高亮格 = 当前查表位置</span>
+              </p>
             </div>
           </div>
 
           {/* 右栏：计算结果 */}
-          <div className="space-y-4">
+          <div className="lg:col-span-4 space-y-4">
             {/* 审核组能力计算 */}
             <div className="bg-white rounded-lg shadow-sm p-4">
               <h2 className="text-sm font-bold text-slate-700 mb-3">审核组能力程度计算</h2>
               
               <div className="bg-slate-50 rounded-lg p-3 mb-3">
-                <p className="text-xs text-slate-600 mb-1">计算公式：</p>
+                <p className="text-xs text-slate-600 mb-1">计算公式（MSWM11-02 第6.9.2条）：</p>
                 <p className="text-xs font-mono text-slate-700">
-                  [(Y₁-1)×N₁ + (Y₂-1)×N₂ + ...] / [Z × (Y-1)] × 100%
+                  [(X₁-1) + (X₂-1) + ... + (Xₙ-1)] / [Z × (Y-1)] × 100%
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  X=审核员体系资格数, Y=体系标准数, Z=审核员数
                 </p>
               </div>
 
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-600">分子计算：</span>
-                  <span className="font-mono text-slate-800">
+                  <span className="font-mono text-slate-800 text-xs">
                     {auditorGroups.map(g => g.count > 0 ? `(${g.systemsCount}-1)×${g.count}` : null).filter(Boolean).join(' + ') || '0'}
                   </span>
                 </div>
@@ -403,6 +452,16 @@ export default function IMSPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-indigo-100">起始审核时间 Ti</span>
                   <span className="text-lg font-bold">{baseAuditTime.toFixed(1)} 人天</span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-indigo-100">整合程度</span>
+                  <span className="text-sm font-bold">{integrationPercent}%（{integrationInfo.label}）</span>
+                </div>
+
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-indigo-100">审核组能力程度</span>
+                  <span className="text-sm font-bold">{capability.percent.toFixed(1)}%</span>
                 </div>
                 
                 <div className="flex justify-between items-center">
@@ -436,10 +495,11 @@ export default function IMSPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
               <h3 className="text-xs font-bold text-amber-800 mb-1">注意事项</h3>
               <ul className="text-xs text-amber-700 space-y-1">
-                <li>• IMS减少量最大不超过20%</li>
+                <li>• IMS减少量最大不超过Ti的20%</li>
                 <li>• 减少量是基于起始时间Ti的百分比</li>
-                <li>• 最终结果应精确至小数点后1位</li>
+                <li>• 最终结果应精确至小数点后1位（四舍五入至0.5）</li>
                 <li>• 审核组能力需在审核组成员确定后计算</li>
+                <li>• 结合审核人天数可能突破单一体系最低要求</li>
               </ul>
             </div>
           </div>
